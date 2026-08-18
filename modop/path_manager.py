@@ -88,12 +88,12 @@ def _tracking_prepare_path() -> str:
 # -----------------------------------------------------------------------
 def _workspace_path() -> str:
     """Chemin vers le répertoire de travail"""
-    return os.path.join(BUREAU, "workspace")
+    return os.path.join(BUREAU, "WORKSPACE")
 
 
 def _qgis_project_path() -> str:
     """Chemin du projet QGIS"""
-    return os.path.join(_workspace_path(), "carte_audit_maillage.qgz")
+    return os.path.join(_workspace_path(), "carte_audit maillage.qgz")
 
 
 # -------------------------------------------------------------------------------------------
@@ -130,6 +130,20 @@ def _insee_analyse_path(insee: str) -> str:
     analysis_path = os.path.join(_insee_dep_path(insee), "Analyse")
     os.makedirs(analysis_path, exist_ok=True)
     return analysis_path
+
+
+# -----------------------------------------------------------------------
+# ------ LIVRABLE QGIS --------------------------------------------------
+# -----------------------------------------------------------------------
+
+def _qgis_saved_project_path(insee: str) -> str:
+    """Chemin du projet QGIS enregistre au nom de la commune."""
+    return os.path.join(_workspace_path(), f"carte_audit {insee}.qgz")
+
+
+def _deliverable_archive_path(insee: str) -> str:
+    """Chemin de l'archive ZIP du livrable, dans le dossier Carte."""
+    return os.path.join(_insee_carte_path(insee), f"carte_audit {insee}.zip")
 
 
 # Configuration par défaut (chemins et options)
