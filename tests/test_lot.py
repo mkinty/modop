@@ -178,3 +178,51 @@ def test_journalisation_du_lot(lot_communes, capsys):
     assert "commune 45002" in sortie
     assert "2/2 livrable(s) produit(s)" in sortie
     assert "[purge]" in sortie
+
+
+# ---------------------------------------------------------------------------
+# Callbacks de progression (utilises par l'interface)
+# ---------------------------------------------------------------------------
+
+def test_on_start_appele_pour_chaque_commune(lot_communes):
+    appels = []
+    prepare_lot_deliverables(
+        LOT, ["45001", "45002"],
+        on_start=lambda position, total, insee: appels.append((position, total, insee)),
+        verbose=False,
+    )
+
+    assert appels == [(1, 2, "45001"), (2, 2, "45002")]
+
+
+def test_on_result_recoit_le_resultat(lot_communes):
+    recus = {}
+    prepare_lot_deliverables(
+        LOT, ["45001", "45002"],
+        on_result=lambda insee, result, error: recus.__setitem__(insee, (result, error)),
+        verbose=False,
+    )
+
+    assert set(recus) == {"45001", "45002"}
+    for result, error in recus.values():
+        assert result is not None and result.ok
+        assert error == ""
+
+
+def test_on_result_signale_un_echec(lot_communes):
+    recus = {}
+    prepare_lot_deliverables(
+        LOT, ["99999"],
+        on_result=lambda insee, result, error: recus.__setitem__(insee, (result, error)),
+        verbose=False,
+    )
+
+    result, error = recus["99999"]
+    assert result is None
+    assert "FileNotFoundError" in error
+
+
+def test_callbacks_optionnels(lot_communes):
+    """L'absence de callback ne doit rien changer."""
+    bilan = prepare_lot_deliverables(LOT, ["45001"], verbose=False)
+    assert bilan.ok

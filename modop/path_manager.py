@@ -43,13 +43,65 @@ TRACKING_FILE = os.path.join(BUREAU, "livrables_communes_faites.txt")
 
 
 # -----------------------------------------------------------------------
+# ------ CHEMINS PARAMÉTRABLES ------------------------------------------
+# -----------------------------------------------------------------------
+# Deux racines peuvent être redéfinies par l'utilisateur : le dossier
+# AUDIT_SNA et le répertoire de travail. Tant qu'aucune valeur n'est fixée,
+# les emplacements par défaut sur le Bureau s'appliquent.
+#
+# La substitution passe par des variables de module plutôt que par une
+# lecture directe du fichier de configuration : path_manager reste sans
+# dépendance, et les tests continuent d'isoler l'ensemble en redirigeant
+# BUREAU.
+
+#: Noms des dossiers par défaut, relatifs au Bureau.
+DEFAULT_AUDIT_SNA_DIR = "AUDIT_SNA"
+DEFAULT_WORKSPACE_DIR = "WORKSPACE"
+
+_audit_sna_override: str | None = None
+_workspace_override: str | None = None
+
+
+def set_paths(audit_sna: str | None = None, workspace: str | None = None) -> None:
+    """Redéfinit les racines du programme.
+
+    Une valeur vide ou None rétablit l'emplacement par défaut sur le Bureau.
+
+    Args:
+        audit_sna: dossier AUDIT_SNA choisi par l'utilisateur.
+        workspace: répertoire de travail choisi par l'utilisateur.
+    """
+    global _audit_sna_override, _workspace_override
+    _audit_sna_override = audit_sna.strip() if audit_sna and audit_sna.strip() else None
+    _workspace_override = workspace.strip() if workspace and workspace.strip() else None
+
+
+def reset_paths() -> None:
+    """Rétablit les deux emplacements par défaut."""
+    set_paths(None, None)
+
+
+def default_audit_sna_path() -> str:
+    """Emplacement par défaut du dossier AUDIT_SNA."""
+    return os.path.join(BUREAU, DEFAULT_AUDIT_SNA_DIR)
+
+
+def default_workspace_path() -> str:
+    """Emplacement par défaut du répertoire de travail."""
+    return os.path.join(BUREAU, DEFAULT_WORKSPACE_DIR)
+
+
+# -----------------------------------------------------------------------
 # ------ RÉPERTOIRE DE L'AUDIT SNA' -------------------------------------
 # -----------------------------------------------------------------------
 # Chemin du dossier Audit SNA
 def _audit_sna_path() -> str:
-    """Chemin du dossier Audit SNA"""
-    # return r"C:\Users\u269775\Altice Campus SFR\Swap Adresse - Etude Cible\audit_SNA"
-    return os.path.join(BUREAU, "AUDIT_SNA")
+    """Chemin du dossier Audit SNA.
+
+    Renvoie le chemin choisi par l'utilisateur s'il en a fixé un, sinon
+    l'emplacement par défaut sur le Bureau.
+    """
+    return _audit_sna_override or default_audit_sna_path()
 
 
 # -----------------------------------------------------------------------
@@ -87,8 +139,12 @@ def _tracking_prepare_path() -> str:
 # ------ RÉPERTOIRE DE TRAVAIL ------------------------------------------
 # -----------------------------------------------------------------------
 def _workspace_path() -> str:
-    """Chemin vers le répertoire de travail"""
-    return os.path.join(BUREAU, "WORKSPACE")
+    """Chemin vers le répertoire de travail.
+
+    Renvoie le chemin choisi par l'utilisateur s'il en a fixé un, sinon
+    l'emplacement par défaut sur le Bureau.
+    """
+    return _workspace_override or default_workspace_path()
 
 
 def _qgis_project_path() -> str:

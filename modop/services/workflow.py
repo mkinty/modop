@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import Callable, Sequence
 
 from modop.constants import ZOOM_LAYER_CANDIDATES
 from modop.path_manager import (
@@ -245,6 +245,8 @@ def prepare_lot_deliverables(
     sort_excel: bool = True,
     strict: bool = False,
     stop_on_error: bool = False,
+    on_start: Callable[[int, int, str], None] | None = None,
+    on_result: Callable[[str, "DeliverableResult | None", str], None] | None = None,
     verbose: bool = True,
 ) -> LotResult:
     """Produit les livrables de plusieurs communes d'un meme lot.
@@ -262,6 +264,11 @@ def prepare_lot_deliverables(
         sort_excel: traite les fichiers d'audit.
         strict: une anomalie fait echouer la commune concernee.
         stop_on_error: interrompt le lot a la premiere commune en echec.
+        on_start: appele avant chaque commune, avec (position, total, insee).
+            Permet a une interface de suivre l'avancement.
+        on_result: appele apres chaque commune, avec (insee, resultat, erreur).
+            `resultat` vaut None en cas d'echec, `erreur` est vide en cas de
+            succes.
         verbose: affiche la progression.
 
     Returns:
@@ -292,8 +299,11 @@ def prepare_lot_deliverables(
         log("")
         log(f"===== [{position}/{len(codes)}] commune {insee} " + "=" * 30)
 
+        if on_start is not None:
+            on_start(position, len(codes), insee)
+
         try:
-            result.results[insee] = prepare_commune_deliverable(
+            commune = prepare_commune_deliverable(
                 lot_name,
                 insee,
                 zoom_layer=zoom_layer,
@@ -303,11 +313,19 @@ def prepare_lot_deliverables(
                 strict=strict,
                 verbose=verbose,
             )
+            result.results[insee] = commune
+
+            if on_result is not None:
+                on_result(insee, commune, "")
+
         except Exception as error:
             # Une commune en echec ne doit pas faire perdre les precedentes.
             message = f"{type(error).__name__} : {error}"
             result.errors[insee] = message
             log(f"[ko] commune {insee} : {message}")
+
+            if on_result is not None:
+                on_result(insee, None, message)
 
             if stop_on_error:
                 raise
@@ -334,6 +352,11 @@ if __name__ == "__main__":
     # Plusieurs communes choisies :
     #     uv run python -m modop.services.workflow 45001 45002
     import sys
+
+    from modop.services.config_io import load_and_apply
+
+    # Les chemins choisis dans l'interface s'appliquent aussi en console.
+    load_and_apply()
 
     LOT = "Lot7"
     codes = sys.argv[1:] or None
