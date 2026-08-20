@@ -50,6 +50,30 @@ La clé de tri (`_sort_key`) produit un triplet `(rang, nombre, texte)`. Le rang
 comparées sur leur contenu : aucun `TypeError` n'est structurellement possible.
 Ordre obtenu : nombres < dates < texte < cellules vides.
 
+### `services/xlsx_extensions.py`
+
+openpyxl ignore les blocs `<extLst>` des feuilles et les supprime à
+l'enregistrement, avec pour seule trace :
+
+```
+UserWarning: Data Validation extension is not supported and will be removed
+```
+
+Ces blocs portent des fonctionnalités courantes dans un fichier d'audit :
+listes déroulantes dont la source est sur une autre feuille, mises en forme
+conditionnelles avancées, plages protégées. Vérifié : après un simple
+aller-retour `load_workbook` / `save`, le bloc a disparu de l'archive.
+
+Le module les relève **avant** ouverture, puis les réinjecte dans le fichier
+enregistré, par manipulation directe du zip. Un point subtil : un fragment
+déplacé perd les déclarations d'espaces de noms portées par la balise
+`<worksheet>` d'origine, ce qui produirait un XML invalide. `_with_namespaces()`
+les rappelle sur le fragment lui-même.
+
+Le procédé est défensif : à la moindre difficulté — archive illisible, feuille
+sans balise fermante — le fichier enregistré par openpyxl est conservé tel quel
+et le journal signale la perte.
+
 ### `services/files.py`
 
 `copy_commune_files()` copie le répertoire QGIS de la commune vers le

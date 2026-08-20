@@ -19,6 +19,7 @@ import re
 import shutil
 import time
 import unicodedata
+import warnings
 from copy import copy
 from datetime import date, datetime, time as dtime  # alias : `time` est déjà pris
 from typing import Any, Iterable, Sequence
@@ -28,6 +29,11 @@ from openpyxl.cell.cell import Cell, MergedCell
 from openpyxl.worksheet.worksheet import Worksheet
 
 from modop.constants import ZONE1_COL, ZONE2_COL, SENS_COL
+from modop.services.xlsx_extensions import (
+    describe_extensions,
+    find_extensions,
+    restore_extensions,
+)
 from modop.path_manager import (
     _excel_source_file_path,
     _excel_destination_file_path,
@@ -295,12 +301,15 @@ def _safe_save(workbook, path: str) -> str:
 # Traitement principal
 # ---------------------------------------------------------------------------
 
-def format_excel_file(lot_name: str, insee: str, verbose: bool = True) -> str | None:
+def format_excel_file(lot_name: str, insee: str, keep_extensions: bool = True,
+                      verbose: bool = True) -> str | None:
     """Copie le fichier Excel de la commune puis trie la copie.
 
     Args:
         lot_name: nom du lot (ex. "Lot7").
         insee: code INSEE de la commune (ex. "73063").
+        keep_extensions: réinjecte les listes déroulantes et autres extensions
+            qu'openpyxl supprime à l'enregistrement.
         verbose: affiche la progression.
 
     Returns:
@@ -334,11 +343,22 @@ def format_excel_file(lot_name: str, insee: str, verbose: bool = True) -> str | 
         log(f"✅ Copie créée : {destination_file}")
 
         # -- 2. Ouverture ---------------------------------------------------
-        workbook = load_workbook(
-            destination_file,
-            # Sans keep_vba, un .xlsm perd ses macros à l'enregistrement.
-            keep_vba=destination_file.lower().endswith(".xlsm"),
-        )
+        # Les extensions sont relevées avant ouverture : openpyxl les ignore
+        # et les supprimerait sans laisser de trace exploitable.
+        extensions = find_extensions(destination_file) if keep_extensions else {}
+
+        # Les avertissements openpyxl sont captés pour être reformulés ; bruts,
+        # ils sont peu lisibles et polluent le journal de l'interface.
+        with warnings.catch_warnings(record=True) as captures:
+            warnings.simplefilter("always")
+            workbook = load_workbook(
+                destination_file,
+                # Sans keep_vba, un .xlsm perd ses macros à l'enregistrement.
+                keep_vba=destination_file.lower().endswith(".xlsm"),
+            )
+
+        for capture in captures:
+            log(f"⚠️ openpyxl : {capture.message}")
 
         # -- 3. En-tête et colonnes -----------------------------------------
         required = (ZONE1_COL, ZONE2_COL, SENS_COL)
@@ -416,6 +436,15 @@ def format_excel_file(lot_name: str, insee: str, verbose: bool = True) -> str | 
 
         # -- 8. Enregistrement ----------------------------------------------
         final_path = _safe_save(workbook, destination_file)
+
+        if extensions:
+            libelles = ", ".join(describe_extensions(extensions))
+            if restore_extensions(final_path, extensions):
+                log(f"🔧 Extensions restaurées : {libelles}.")
+            else:
+                log(f"⚠️ Extensions perdues : {libelles}. "
+                    "openpyxl ne sait pas les conserver.")
+
         log(f"✅ {len(snapshots)} ligne(s) triée(s).")
         log(f"📁 Fichier final : {final_path}")
         return final_path
@@ -438,4 +467,4 @@ def format_excel_file(lot_name: str, insee: str, verbose: bool = True) -> str | 
 
 if __name__ == "__main__":
     # uv run python -m modop.services.excel
-    format_excel_file(lot_name="Lot7", insee="45001")
+    format_excel_file(lot_name="Lot7", insee="04013")

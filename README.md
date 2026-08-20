@@ -172,6 +172,12 @@ le fichier en contient.
 **Les cellules fusionnées** dans la zone de données font échouer le tri, à
 dessein : les déplacer produirait un fichier faux sans le signaler.
 
+**Les listes déroulantes** dont la source est sur une autre feuille sont
+supprimées par openpyxl à l'enregistrement. Le programme les relève avant
+ouverture et les réinjecte dans le fichier trié. Le journal l'indique :
+`🔧 Extensions restaurées : listes déroulantes.` Même traitement pour les mises
+en forme conditionnelles avancées et les plages protégées.
+
 ## Documentation
 
 `docs/ARCHITECTURE.md` détaille les choix techniques, le rôle de chaque module

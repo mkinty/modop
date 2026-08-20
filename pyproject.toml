@@ -13,3 +13,9 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+filterwarnings = [
+    # openpyxl signale les extensions qu'il ne gere pas. Le programme les
+    # restaure lui-meme (voir services/xlsx_extensions.py) et reformule
+    # l'avertissement dans son journal.
+    "ignore:.*extension is not supported.*:UserWarning",
+]
