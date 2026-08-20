@@ -11,8 +11,8 @@ constitution de l'archive à déposer.
 │  ████████████████████░░░░░░░░  Commune 2/2 — 45002      │
 │  ● Audit  ● Purge  ● Copie  ● QGIS  ● Archive           │
 ├─ Résultats ─────────────────────────────────────────────┤
-│  45001  ✅ OK   carto maillage principal  carte_audit…  │
-│  45002  ✅ OK   carto maillage principal  carte_audit…  │
+│  45001  ✅ OK   carto maillage principal  Livrable Ca…  │
+│  45002  ✅ OK   carto maillage principal  Livrable Ca…  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -89,7 +89,7 @@ Pour chaque commune, dans cet ordre :
 | **Audit** | Trie `audit_<insee>.xlsx` sur zone 1, zone 2, sens, et dépose la copie triée dans le dossier de la commune |
 | **Purge** | Vide le répertoire de travail, en préservant le projet modèle |
 | **Copie** | Copie les fichiers QGIS de la commune vers le répertoire de travail |
-| **QGIS** | Ouvre le projet modèle, contrôle les couches, centre la carte sur la commune, enregistre sous `carte_audit <insee>.qgz` |
+| **QGIS** | Ouvre le projet modèle, contrôle les couches, centre la carte sur la commune, enregistre au nom de la commune |
 | **Archive** | Compresse les `.csv` et le projet, dépose le ZIP dans le sous-dossier `Carte` |
 
 Le fichier Excel est livré à part, dans le dossier de la commune : il n'entre
@@ -120,7 +120,7 @@ Bureau/
 │   │   └── QGIS/45001/*.csv                ← données de la commune
 │   └── Dep45/45001/
 │       ├── audit_45001.xlsx                ← audit trié (sortie)
-│       └── Carte/carte_audit 45001.zip     ← livrable (sortie)
+│       └── Carte/Livrable Carto 45001.zip ← livrable (sortie)
 └── WORKSPACE/
     └── carte_audit maillage.qgz            ← projet modèle
 ```

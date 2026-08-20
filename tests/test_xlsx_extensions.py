@@ -242,3 +242,103 @@ def test_avertissement_openpyxl_reformule(bureau, classeur_avec_extension, capsy
     sortie = capsys.readouterr().out
     assert "openpyxl : Data Validation extension" in sortie
     assert "Extensions restaurées : listes déroulantes" in sortie
+
+
+# ---------------------------------------------------------------------------
+# Régression : extLst imbriqué
+# ---------------------------------------------------------------------------
+# Une barre de données porte son propre <extLst> dans son <cfRule>. Une
+# recherche textuelle partait de celui-là et engloutissait tout jusqu'au bloc
+# de niveau feuille, produisant un fragment qui dupliquait
+# </conditionalFormatting> et <pageMargins> — fichier illisible dans Excel.
+
+EXT_IMBRIQUE = (
+    '<conditionalFormatting sqref="B2:B100"><cfRule type="dataBar" priority="1">'
+    '<dataBar><cfvo type="min"/><cfvo type="max"/><color rgb="FF638EC6"/></dataBar>'
+    '<extLst><ext uri="{B025F937-C7B1-47D3-B67F-A62EFF666E3E}" '
+    'xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">'
+    "<x14:id>{00000000-0000-0000-0000-000000000001}</x14:id></ext></extLst>"
+    "</cfRule></conditionalFormatting>"
+)
+
+
+@pytest.fixture
+def classeur_extlst_imbrique(tmp_path):
+    """Classeur portant un extLst imbriqué ET un extLst de niveau feuille."""
+    base = tmp_path / "base.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["id", "zone 1", "zone 2", "sens", "statut"])
+    worksheet.append([1, 2, "B", "Nord", "OK"])
+    worksheet.append([2, 1, "A", "Sud", "NOK"])
+    workbook.save(base)
+
+    cible = tmp_path / "imbrique.xlsx"
+    with zipfile.ZipFile(base) as source, \
+         zipfile.ZipFile(cible, "w", zipfile.ZIP_DEFLATED) as sortie:
+        for item in source.infolist():
+            contenu = source.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                xml = contenu.decode("utf-8")
+                xml = xml.replace("<pageMargins", EXT_IMBRIQUE + "<pageMargins")
+                xml = xml.replace("</worksheet>", EXT_VALIDATION + "</worksheet>")
+                contenu = xml.encode("utf-8")
+            sortie.writestr(item, contenu)
+
+    return str(cible)
+
+
+def test_ne_capture_que_le_bloc_de_niveau_feuille(classeur_extlst_imbrique):
+    fragment = find_extensions(classeur_extlst_imbrique)["xl/worksheets/sheet1.xml"]
+
+    assert URI_VALIDATION in fragment
+    assert "conditionalFormatting" not in fragment
+    assert "pageMargins" not in fragment
+    assert "dataBar" not in fragment
+
+
+def test_fichier_reste_lisible_avec_extlst_imbrique(
+        bureau, classeur_extlst_imbrique):
+    """Régression : le livrable doit rester ouvrable."""
+    _installer_source(bureau, classeur_extlst_imbrique)
+    resultat = format_excel_file(LOT, INSEE, verbose=False)
+
+    worksheet = load_workbook(resultat).active
+    assert [r[1] for r in worksheet.iter_rows(min_row=2, values_only=True)] == [1, 2]
+
+
+def test_aucun_element_duplique(bureau, classeur_extlst_imbrique):
+    _installer_source(bureau, classeur_extlst_imbrique)
+    resultat = format_excel_file(LOT, INSEE, verbose=False)
+
+    xml = zipfile.ZipFile(resultat).read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert xml.count("<pageMargins") <= 1
+    assert xml.count("</worksheet>") == 1
+
+
+def test_feuille_bien_formee(bureau, classeur_extlst_imbrique):
+    """Le XML produit doit être analysable : Excel, lui, n'est pas tolérant."""
+    from xml.etree import ElementTree
+
+    _installer_source(bureau, classeur_extlst_imbrique)
+    resultat = format_excel_file(LOT, INSEE, verbose=False)
+
+    xml = zipfile.ZipFile(resultat).read("xl/worksheets/sheet1.xml")
+    ElementTree.fromstring(xml)      # ne doit pas lever
+
+
+def test_extlst_vide_ignore(classeur_avec_extension):
+    assert find_extensions(classeur_avec_extension(extension="<extLst/>")) == {}
+
+
+def test_reinjection_refusee_si_le_resultat_est_invalide(
+        classeur_avec_extension, tmp_path):
+    """Un fragment mal formé ne doit jamais remplacer le fichier."""
+    source = classeur_avec_extension()
+    cible = str(tmp_path / "cible.xlsx")
+    load_workbook(source).save(cible)
+    avant = open(cible, "rb").read()
+
+    assert restore_extensions(
+        cible, {"xl/worksheets/sheet1.xml": "<extLst><ext></extLst>"}) is False
+    assert open(cible, "rb").read() == avant

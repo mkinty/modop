@@ -124,10 +124,25 @@ def test_archive_deposee_dans_le_dossier_carte(commune_files, make_qgz, default_
     assert os.path.isfile(resultat)
     assert os.path.basename(os.path.dirname(resultat)) == "Carte"
 
-    # Le separateur est fixe par path_manager ; on verifie le contrat.
-    assert nom.startswith("carte_audit")
+    # Le libellé est fixé par path_manager ; on vérifie le contrat : le nom
+    # porte le code INSEE et l'extension d'archive.
     assert INSEE in nom
     assert nom.endswith(".zip")
+
+
+def test_archive_intermediaire_suit_le_meme_nom(commune_files, make_qgz, default_layers):
+    """L'archive de transit ne doit pas garder un nom d'une autre convention."""
+    copy_commune_files(LOT, INSEE, verbose=False)
+    projet = make_qgz("carte_audit 45001.qgz", default_layers,
+                      directory=_workspace_path())
+
+    resultat = build_deliverable_archive(INSEE, projet, _workspace_path(), verbose=False)
+    transit = os.path.join(_workspace_path(), os.path.basename(resultat))
+
+    assert os.path.isfile(transit)
+    # Aucune archive orpheline sous un autre nom.
+    archives = [n for n in os.listdir(_workspace_path()) if n.endswith(".zip")]
+    assert archives == [os.path.basename(resultat)]
 
 
 def test_contenu_de_l_archive(commune_files, make_qgz, default_layers):

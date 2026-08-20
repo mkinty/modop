@@ -199,7 +199,7 @@ def _qgis_saved_project_path(insee: str) -> str:
 
 def _deliverable_archive_path(insee: str) -> str:
     """Chemin de l'archive ZIP du livrable, dans le dossier Carte."""
-    return os.path.join(_insee_carte_path(insee), f"carte_audit {insee}.zip")
+    return os.path.join(_insee_carte_path(insee), f"Livrable Carto {insee}.zip")
 
 
 # Configuration par défaut (chemins et options)

@@ -20,9 +20,11 @@ enregistré par openpyxl est conservé tel quel.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import zipfile
+from xml.etree import ElementTree
 
 #: Extensions connues, par identifiant. Reprend la table d'openpyxl, traduite.
 EXTENSION_LABELS = {
@@ -37,9 +39,8 @@ EXTENSION_LABELS = {
     "{F7C9EE02-42E1-4005-9D12-6889AFFD525C}": "extensions web",
 }
 
-#: Bloc <extLst> situé juste avant la fermeture de la feuille. Les extLst
-#: imbriqués (dans un conditionalFormatting par exemple) ne sont pas visés.
-_EXTLST_RE = re.compile(r"(<extLst>.*?</extLst>)\s*</worksheet>", re.DOTALL)
+#: Balise XML, ouvrante, fermante ou auto-fermante.
+_TAG_RE = re.compile(r"<(/?)([\w:.-]+)([^>]*?)(/?)>", re.DOTALL)
 
 #: Déclarations d'espaces de noms portées par la balise <worksheet>.
 _XMLNS_RE = re.compile(r'\sxmlns:(\w+)="[^"]*"')
@@ -50,6 +51,53 @@ _URI_RE = re.compile(r'<ext\s[^>]*uri="([^"]+)"', re.IGNORECASE)
 #: Préfixes utilisés dans un fragment, pour ne rappeler que les déclarations
 #: réellement nécessaires.
 _PREFIX_RE = re.compile(r"<(\w+):")
+
+
+def _toplevel_extlst(xml: str) -> str | None:
+    """Extrait le bloc <extLst> enfant direct de <worksheet>.
+
+    Un balayage de profondeur est indispensable : une feuille peut contenir
+    plusieurs <extLst> imbriqués — une barre de données en porte un dans son
+    <cfRule>. Une recherche textuelle partirait du premier rencontré et
+    engloberait tout ce qui le sépare du dernier, produisant un fragment qui,
+    réinjecté, duplique des éléments et rend le fichier illisible.
+
+    Le texte d'origine est renvoyé tel quel, sans réécriture : les préfixes et
+    l'ordre des attributs sont préservés à l'octet près.
+
+    Returns:
+        Le fragment, ou None si la feuille n'en contient pas.
+    """
+    profondeur = 0
+    debut = None
+    niveau_extlst = None
+
+    for balise in _TAG_RE.finditer(xml):
+        fermante, nom, _attributs, auto_fermante = balise.groups()
+
+        # Les instructions de traitement et commentaires ne sont pas des
+        # éléments : ils n'entrent pas dans le calcul de profondeur.
+        if nom.startswith(("?", "!")):
+            continue
+
+        if fermante:
+            profondeur -= 1
+            if debut is not None and profondeur == niveau_extlst:
+                return xml[debut:balise.end()]
+            continue
+
+        if auto_fermante:
+            # <extLst/> vide : rien à conserver.
+            continue
+
+        # Profondeur 1 = enfant direct de <worksheet>, qui occupe le niveau 0.
+        if nom == "extLst" and profondeur == 1 and debut is None:
+            debut = balise.start()
+            niveau_extlst = profondeur
+
+        profondeur += 1
+
+    return None
 
 
 def _sheet_files(archive: zipfile.ZipFile) -> list[str]:
@@ -104,11 +152,9 @@ def find_extensions(path: str) -> dict[str, str]:
         with zipfile.ZipFile(path) as archive:
             for nom in _sheet_files(archive):
                 xml = archive.read(nom).decode("utf-8")
-                correspondance = _EXTLST_RE.search(xml)
-                if correspondance:
-                    trouves[nom] = _with_namespaces(
-                        correspondance.group(1), _namespaces(xml)
-                    )
+                fragment = _toplevel_extlst(xml)
+                if fragment:
+                    trouves[nom] = _with_namespaces(fragment, _namespaces(xml))
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError):
         return {}
 
@@ -130,6 +176,32 @@ def describe_extensions(extensions: dict[str, str]) -> list[str]:
                 libelles.append(libelle)
 
     return libelles
+
+
+def _is_valid_workbook(path: str, sheets: list[str]) -> bool:
+    """Verifie qu'un classeur reste exploitable apres reinjection.
+
+    Un fragment mal delimite produit un XML syntaxiquement correct mais dont
+    les elements sont dupliques ou hors ordre : Excel refuse alors d'ouvrir le
+    fichier, sans que Python ne signale quoi que ce soit. On controle donc la
+    bonne formation de chaque feuille modifiee, ainsi que la presence des
+    entrees essentielles.
+    """
+    try:
+        with zipfile.ZipFile(path) as archive:
+            noms = set(archive.namelist())
+            if "[Content_Types].xml" not in noms or "xl/workbook.xml" not in noms:
+                return False
+
+            for nom in sheets:
+                if nom not in noms:
+                    return False
+                ElementTree.fromstring(archive.read(nom))
+
+    except (OSError, zipfile.BadZipFile, ElementTree.ParseError):
+        return False
+
+    return True
 
 
 def restore_extensions(target: str, extensions: dict[str, str]) -> bool:
@@ -172,9 +244,16 @@ def restore_extensions(target: str, extensions: dict[str, str]) -> bool:
 
                 sortie.writestr(item, contenu)
 
-        if reinjectes:
-            shutil.move(temporaire, target)
-            return True
+        if not reinjectes:
+            return False
+
+        # Le fichier n'est remplace que s'il est verifie : mieux vaut perdre
+        # les listes deroulantes qu'un livrable illisible.
+        if not _is_valid_workbook(temporaire, list(extensions)):
+            return False
+
+        shutil.move(temporaire, target)
+        return True
 
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError):
         pass
@@ -182,7 +261,6 @@ def restore_extensions(target: str, extensions: dict[str, str]) -> bool:
     finally:
         # Le fichier temporaire ne doit jamais subsister.
         try:
-            import os
             if os.path.exists(temporaire):
                 os.remove(temporaire)
         except OSError:

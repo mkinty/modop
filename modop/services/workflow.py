@@ -4,9 +4,9 @@ Enchaine les six etapes du mode operatoire :
 
     1. trier le fichier Excel d'audit et le deposer dans le dossier commune ;
     2. copier les fichiers QGIS de la commune vers le repertoire de travail ;
-    3. ouvrir le projet carte_audit_maillage ;
+    3. ouvrir le projet QGIS modele ;
     4. controler les couches, puis centrer la carte sur la commune ;
-    5. enregistrer le projet sous carte_audit_<insee>.qgz ;
+    5. enregistrer le projet au nom de la commune ;
     6. compresser les .csv et le projet, et deposer l'archive dans Carte.
 
 Chaque etape est deleguee a un module dedie. Ce module ne fait qu'enchainer
@@ -150,7 +150,8 @@ def prepare_commune_deliverable(
         lot_name: nom du lot (ex. "Lot7").
         insee: code INSEE de la commune (ex. "45001").
         zoom_layer: couche de centrage. Detectee automatiquement si omise.
-        project_path: projet QGIS source. Par defaut, carte_audit_maillage.
+        project_path: projet QGIS source. Par defaut, celui que designe
+            path_manager.
         sort_excel: traite le fichier d'audit. False pour ne produire que le
             livrable QGIS.
         clean_workspace: vide le repertoire de travail avant la copie, en
@@ -260,7 +261,8 @@ def prepare_lot_deliverables(
         insee_codes: codes INSEE a traiter (ex. [45001, 45002]). Si omis, les
             communes sont decouvertes dans le repertoire QGIS du lot.
         zoom_layer: couche de centrage, commune a toutes les communes.
-        project_path: projet QGIS source. Par defaut, carte_audit maillage.
+        project_path: projet QGIS source. Par defaut, celui que designe
+            path_manager.
         sort_excel: traite les fichiers d'audit.
         strict: une anomalie fait echouer la commune concernee.
         stop_on_error: interrompt le lot a la premiere commune en echec.

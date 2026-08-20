@@ -99,9 +99,9 @@ class QgisProject:
     """Projet QGIS charge en memoire.
 
     Usage :
-        project = QgisProject.open("carte_audit_maillage.qgz")
+        project = QgisProject.open("modele.qgz")
         project.zoom_to_layer("communes")
-        project.save_as("carte_audit_45001.qgz")
+        project.save_as("commune_45001.qgz")
     """
 
     def __init__(self, path: str, tree: ElementTree.ElementTree,
