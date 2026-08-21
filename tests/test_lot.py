@@ -226,3 +226,14 @@ def test_callbacks_optionnels(lot_communes):
     """L'absence de callback ne doit rien changer."""
     bilan = prepare_lot_deliverables(LOT, ["45001"], verbose=False)
     assert bilan.ok
+
+
+def test_arborescence_creee_pour_chaque_commune(lot_communes):
+    from modop.path_manager import _insee_analyse_path, _insee_carte_path
+
+    bilan = prepare_lot_deliverables(LOT, ["45001", "45002"], verbose=False)
+
+    for insee in ("45001", "45002"):
+        assert os.path.isdir(_insee_analyse_path(insee))
+        assert os.path.isdir(_insee_carte_path(insee))
+        assert bilan.results[insee].analysis_dir.endswith("Analyse")

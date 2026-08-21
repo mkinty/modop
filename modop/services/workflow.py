@@ -1,13 +1,14 @@
 """Orchestration du livrable d'une commune.
 
-Enchaine les six etapes du mode operatoire :
+Enchaine les sept etapes du mode operatoire :
 
-    1. trier le fichier Excel d'audit et le deposer dans le dossier commune ;
-    2. copier les fichiers QGIS de la commune vers le repertoire de travail ;
-    3. ouvrir le projet QGIS modele ;
-    4. controler les couches, puis centrer la carte sur la commune ;
-    5. enregistrer le projet au nom de la commune ;
-    6. compresser les .csv et le projet, et deposer l'archive dans Carte.
+    1. creer l'arborescence de la commune (Carte et Analyse) ;
+    2. trier le fichier Excel d'audit et le deposer dans le dossier commune ;
+    3. copier les fichiers QGIS de la commune vers le repertoire de travail ;
+    4. ouvrir le projet QGIS modele ;
+    5. controler les couches, puis centrer la carte sur la commune ;
+    6. enregistrer le projet au nom de la commune ;
+    7. compresser les .csv et le projet, et deposer l'archive dans Carte.
 
 Chaque etape est deleguee a un module dedie. Ce module ne fait qu'enchainer
 et rapporter.
@@ -29,6 +30,8 @@ from typing import Callable, Sequence
 from modop.constants import ZOOM_LAYER_CANDIDATES
 from modop.path_manager import (
     _excel_source_file_path,
+    _insee_analyse_path,
+    _insee_carte_path,
     _qgis_project_path,
     _qgis_saved_project_path,
     _workspace_path,
@@ -44,6 +47,8 @@ class DeliverableResult:
     """Resultat d'un traitement de commune."""
 
     insee: str
+    carte_dir: str = ""
+    analysis_dir: str = ""
     excel_file: str = ""
     copied_files: list[str] = field(default_factory=list)
     project_file: str = ""
@@ -180,7 +185,14 @@ def prepare_commune_deliverable(
 
     result = DeliverableResult(insee=insee)
 
-    # -- 1. Fichier d'audit -------------------------------------------------
+    # -- 1. Arborescence de la commune -------------------------------------
+    # Les deux fonctions creent le dossier au passage. Analyse reste vide a
+    # ce stade : elle accueille les pieces produites hors de ce traitement.
+    result.carte_dir = _insee_carte_path(insee)
+    result.analysis_dir = _insee_analyse_path(insee)
+    log(f"[dossier] commune {insee} : Carte et Analyse prêts")
+
+    # -- 2. Fichier d'audit -------------------------------------------------
     if sort_excel:
         result.excel_file = _sort_audit_file(lot_name, insee, result.warnings)
         if result.excel_file:
@@ -189,7 +201,7 @@ def prepare_commune_deliverable(
             log(f"[excel] ⚠ {result.warnings[-1]}")
         stop_if_strict()
 
-    # -- 2. Copie des fichiers vers le repertoire de travail ---------------
+    # -- 3. Copie des fichiers vers le repertoire de travail ---------------
     source_project = project_path or _qgis_project_path()
 
     # La purge evite qu'une commune herite des fichiers de la precedente :
@@ -199,12 +211,12 @@ def prepare_commune_deliverable(
 
     result.copied_files = copy_commune_files(lot_name, insee, verbose=verbose)
 
-    # -- 3. Ouverture du projet -------------------------------------------
+    # -- 4. Ouverture du projet -------------------------------------------
     project = QgisProject.open(source_project)
     log(f"[qgis] projet ouvert : {os.path.basename(source_project)} "
         f"({len(project.layers)} couche(s))")
 
-    # -- 4. Controles et centrage ------------------------------------------
+    # -- 5. Controles et centrage ------------------------------------------
     # Le projet est ouvert depuis le workspace : les sources relatives
     # pointent donc vers les fichiers qui viennent d'etre copies.
     anomalies = project.check()
@@ -218,13 +230,13 @@ def prepare_commune_deliverable(
     log(f"[qgis] centrage sur '{result.zoom_layer}' "
         f"({extent.xmin:.0f}, {extent.ymin:.0f}) -> ({extent.xmax:.0f}, {extent.ymax:.0f})")
 
-    # -- 5. Enregistrement au nom de la commune ----------------------------
+    # -- 6. Enregistrement au nom de la commune ----------------------------
     # Meme repertoire que les donnees, pour que les sources relatives restent
     # valides.
     result.project_file = project.save_as(_qgis_saved_project_path(insee))
     log(f"[qgis] enregistre : {os.path.basename(result.project_file)}")
 
-    # -- 6. Archive du livrable --------------------------------------------
+    # -- 7. Archive du livrable --------------------------------------------
     result.archive_file = build_deliverable_archive(
         insee,
         project_file=result.project_file,

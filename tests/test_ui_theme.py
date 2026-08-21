@@ -29,7 +29,7 @@ def test_les_polices_sont_definies():
 
 def test_les_phases_suivent_le_mode_operatoire():
     cles = [key for key, _label, _color in theme.PHASES]
-    assert cles == ["excel", "purge", "copie", "qgis", "zip"]
+    assert cles == ["dossier", "excel", "purge", "copie", "qgis", "zip"]
 
 
 def test_chaque_phase_a_une_couleur_valide():

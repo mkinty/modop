@@ -40,6 +40,7 @@ F_MONO = "Consolas"
 # Les cles correspondent aux prefixes journalises par les services :
 # une ligne "[qgis] ..." allume l'etape "qgis".
 PHASES = [
+    ("dossier", "Dossiers", C_TEXT2),
     ("excel", "Audit", C_ACCENT),
     ("purge", "Purge", C_MUTED),
     ("copie", "Copie", C_GREEN),
@@ -49,6 +50,7 @@ PHASES = [
 
 # ── Correspondance prefixe de journal → couleur d'affichage ──────
 LOG_COLORS = {
+    "[dossier]": C_TEXT2,
     "[excel]": C_ACCENT,
     "[purge]": C_MUTED,
     "[copie]": C_GREEN,

@@ -86,6 +86,7 @@ Pour chaque commune, dans cet ordre :
 
 | Étape | Action |
 |---|---|
+| **Dossiers** | Crée l'arborescence de la commune : `Carte` et `Analyse` |
 | **Audit** | Trie `audit_<insee>.xlsx` sur zone 1, zone 2, sens, et dépose la copie triée dans le dossier de la commune |
 | **Purge** | Vide le répertoire de travail, en préservant le projet modèle |
 | **Copie** | Copie les fichiers QGIS de la commune vers le répertoire de travail |
@@ -119,8 +120,9 @@ Bureau/
 │   │   ├── Excel/audit_45001.xlsx          ← source de l'audit
 │   │   └── QGIS/45001/*.csv                ← données de la commune
 │   └── Dep45/45001/
-│       ├── audit_45001.xlsx                ← audit trié (sortie)
-│       └── Carte/Livrable Carto 45001.zip ← livrable (sortie)
+│       ├── audit_45001.xlsx                 ← audit trié (sortie)
+│       ├── Carte/Livrable Carto 45001.zip   ← livrable (sortie)
+│       └── Analyse/                         ← créé vide, pour ton travail
 └── WORKSPACE/
     └── carte_audit maillage.qgz            ← projet modèle
 ```

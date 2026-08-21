@@ -265,3 +265,57 @@ def test_journalisation_complete(commune_files, excel_source, capsys):
 
     # L'ordre du mode operatoire est respecte.
     assert sortie.index("[excel]") < sortie.index("[copie]") < sortie.index("[ok]")
+
+
+# ---------------------------------------------------------------------------
+# Arborescence de la commune
+# ---------------------------------------------------------------------------
+
+def test_dossiers_carte_et_analyse_crees(commune_files):
+    from modop.path_manager import _insee_analyse_path, _insee_carte_path
+
+    resultat = prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=False)
+
+    assert resultat.carte_dir == _insee_carte_path(INSEE)
+    assert resultat.analysis_dir == _insee_analyse_path(INSEE)
+    assert os.path.isdir(resultat.carte_dir)
+    assert os.path.isdir(resultat.analysis_dir)
+    assert os.path.basename(resultat.analysis_dir) == "Analyse"
+
+
+def test_analyse_est_un_sous_dossier_de_la_commune(commune_files):
+    from modop.path_manager import _insee_dep_path
+
+    resultat = prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=False)
+    assert os.path.dirname(resultat.analysis_dir) == _insee_dep_path(INSEE)
+
+
+def test_analyse_reste_vide(commune_files):
+    """Le dossier est préparé, pas rempli : rien du livrable n'y va."""
+    resultat = prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=False)
+    assert os.listdir(resultat.analysis_dir) == []
+
+
+def test_dossiers_crees_meme_sans_audit(commune_files):
+    """L'arborescence précède le tri : elle existe même si l'audit manque."""
+    resultat = prepare_commune_deliverable(LOT, INSEE, verbose=False)
+
+    assert os.path.isdir(resultat.analysis_dir)
+    assert any("audit absent" in message for message in resultat.warnings)
+
+
+def test_dossier_existant_non_ecrase(commune_files):
+    """Un dossier Analyse déjà rempli doit être conservé."""
+    from modop.path_manager import _insee_analyse_path
+
+    depart = _insee_analyse_path(INSEE)
+    with open(os.path.join(depart, "note.txt"), "w", encoding="utf-8") as handle:
+        handle.write("travail en cours")
+
+    prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=False)
+    assert os.listdir(depart) == ["note.txt"]
+
+
+def test_journal_signale_les_dossiers(commune_files, capsys):
+    prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=True)
+    assert "[dossier]" in capsys.readouterr().out
