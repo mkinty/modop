@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import traceback
 import os
 import queue
 import subprocess
@@ -35,7 +36,12 @@ from tkinter import filedialog, messagebox, ttk
 from modop.services.config_io import (
     apply_paths, load_and_apply, parse_insee_codes, save_config,
 )
-from modop.path_manager import default_audit_sna_path, default_workspace_path
+from modop.path_manager import (
+    default_audit_sna_path,
+    default_prepare_deliverable_path,
+    default_workspace_path,
+)
+from modop import path_manager
 from modop.services.files import list_communes
 from modop.services.workflow import prepare_lot_deliverables
 
@@ -48,6 +54,11 @@ from .theme import (
 #: Periode de relecture de la file, en millisecondes. Assez court pour que le
 #: journal defile de facon fluide, assez long pour ne pas saturer la boucle.
 POLL_INTERVAL_MS = 120
+
+#: Delai sans le moindre message avant de considerer le traitement figé et
+#: d'afficher ou se trouve le thread de travail. Une commune volumineuse peut
+#: rester silencieuse un moment : le seuil est large.
+WATCHDOG_SECONDS = 90
 
 
 class _QueueWriter(io.TextIOBase):
@@ -90,6 +101,9 @@ class App(tk.Tk):
         self._queue: queue.Queue = queue.Queue()
         self._running = False
         self._started_at = None
+        self._worker_thread: threading.Thread | None = None
+        self._last_message_at = 0.0
+        self._watchdog_fired = False
         self._log_visible = False
         self._phase_dots: dict[str, tk.Label] = {}
 
@@ -97,6 +111,17 @@ class App(tk.Tk):
         self._build_ui()
         self._restore_config()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Sans cette redirection, une erreur survenue dans un rappel Tkinter
+        # part sur la sortie d'erreur, invisible si l'application est lancee
+        # depuis le Finder ou un raccourci.
+        self.report_callback_exception = self._on_tk_error
+
+    def _on_tk_error(self, exc_type, value, tb) -> None:
+        """Journalise une erreur survenue dans un rappel Tkinter."""
+        detail = "".join(traceback.format_exception(exc_type, value, tb)).rstrip()
+        for ligne in detail.splitlines():
+            self._append_log(f"[ko] {ligne}")
 
     # ------------------------------------------------------------------
     # Construction de l'interface
@@ -293,9 +318,13 @@ class App(tk.Tk):
                         highlightthickness=1, highlightbackground=C_BORDER2,
                         highlightcolor=C_ACCENT)
 
-    def _hint(self, parent, text: str) -> None:
-        tk.Label(parent, text=text, font=(F_BODY, 8), bg=C_CARD,
-                 fg=C_MUTED).pack(anchor="w", pady=(2, 0))
+    def _hint(self, parent, text: str) -> tk.Label:
+        """Ligne d'aide sous un champ. Renvoie le libellé, pour pouvoir le
+        mettre à jour."""
+        label = tk.Label(parent, text=text, font=(F_BODY, 8), bg=C_CARD,
+                         fg=C_MUTED)
+        label.pack(anchor="w", pady=(2, 0))
+        return label
 
     #: Largeur des libelles dans une paire de colonnes. Identique a
     #: LABEL_WIDTH pour que tous les champs de la carte s'alignent sur une
@@ -367,8 +396,8 @@ class App(tk.Tk):
                       bg=C_PANEL2, fg=C_TEXT2, font=(F_BODY, 10), relief="flat",
                       cursor="hand2", padx=10).pack(side="left", padx=(6, 0), ipady=3)
 
-        if hint:
-            self._hint(right, hint)
+        # L'aide est toujours créée : son texte peut devoir être recalculé.
+        entry.hint_label = self._hint(right, hint)
 
         return entry
 
@@ -378,6 +407,18 @@ class App(tk.Tk):
         if chosen:
             entry.delete(0, "end")
             entry.insert(0, os.path.normpath(chosen))
+            self._refresh_deliverable_hint()
+
+    def _refresh_deliverable_hint(self) -> None:
+        """Recalcule l'aide du dossier de préparation des livrables.
+
+        Son emplacement par défaut est un sous-dossier d'AUDIT_SNA : il change
+        dès que l'utilisateur redéfinit celui-ci.
+        """
+        saisi = self.ent_audit.get().strip()
+        racine = saisi or default_audit_sna_path()
+        defaut = os.path.join(racine, path_manager.DEFAULT_DELIVERABLE_DIR)
+        self.ent_deliverable.hint_label.configure(text=f"Vide = {defaut}")
 
     def _build_config_card(self, parent) -> None:
         """Carte de configuration : un champ par ligne."""
@@ -387,9 +428,17 @@ class App(tk.Tk):
         self.ent_audit = self._entry_row(
             body, "Dossier AUDIT_SNA",
             hint=f"Vide = {default_audit_sna_path()}", browse=True)
+        self.ent_deliverable = self._entry_row(
+            body, "Préparation livrables",
+            hint="", browse=True)
         self.ent_workspace = self._entry_row(
             body, "Répertoire de travail",
             hint=f"Vide = {default_workspace_path()}", browse=True)
+
+        # L'emplacement par défaut des livrables dérive du dossier AUDIT_SNA :
+        # l'aide doit suivre la saisie, sinon elle indique un chemin faux.
+        self.ent_audit.bind("<KeyRelease>",
+                            lambda _event: self._refresh_deliverable_hint())
 
         tk.Frame(body, bg=C_BORDER, height=1).pack(fill="x", pady=(4, 12))
 
@@ -559,7 +608,9 @@ class App(tk.Tk):
     def _restore_config(self) -> None:
         """Reapplique les preferences de la session precedente."""
         self.ent_audit.insert(0, self.config_data["audit_sna_path"])
+        self.ent_deliverable.insert(0, self.config_data["deliverable_path"])
         self.ent_workspace.insert(0, self.config_data["workspace_path"])
+        self._refresh_deliverable_hint()
         self.ent_lot.insert(0, self.config_data["lot_name"])
         self.ent_zoom.insert(0, self.config_data["zoom_layer"])
 
@@ -577,6 +628,7 @@ class App(tk.Tk):
         """Etat courant de la saisie."""
         return {
             "audit_sna_path": self.ent_audit.get().strip(),
+            "deliverable_path": self.ent_deliverable.get().strip(),
             "workspace_path": self.ent_workspace.get().strip(),
             "lot_name": self.ent_lot.get().strip(),
             "insee_codes": ", ".join(parse_insee_codes(self.txt_insee.get("1.0", "end"))),
@@ -667,8 +719,11 @@ class App(tk.Tk):
             "strict": self.var_strict.get(),
             "stop_on_error": self.var_stop.get(),
         }
-        threading.Thread(target=self._worker, args=(lot, codes, options),
-                         daemon=True).start()
+        self._last_message_at = time.time()
+        self._watchdog_fired = False
+        self._worker_thread = threading.Thread(
+            target=self._worker, args=(lot, codes, options), daemon=True)
+        self._worker_thread.start()
         self.after(POLL_INTERVAL_MS, self._poll)
 
     def _worker(self, lot: str, codes: list[str], options: dict) -> None:
@@ -677,6 +732,8 @@ class App(tk.Tk):
         Ne touche a aucun widget : tout passe par la file.
         """
         writer = _QueueWriter(self._queue)
+        termine = False
+
         try:
             # Les services journalisent avec print : on capte cette sortie
             # plutot que de les modifier.
@@ -693,35 +750,105 @@ class App(tk.Tk):
                 )
             writer.flush()
             self._queue.put(("done", bilan))
+            termine = True
 
-        except Exception as error:
+        except BaseException as error:
+            # BaseException et non Exception : une sortie inattendue laisserait
+            # sinon l'interface bloquee sur « traitement en cours ».
             writer.flush()
+            self._queue.put(("log", "".join(traceback.format_exc()).rstrip()))
             self._queue.put(("failed", f"{type(error).__name__} : {error}"))
+            termine = True
+
+        finally:
+            if not termine:
+                self._queue.put(("failed", "Le traitement s'est interrompu sans message."))
 
     def _poll(self) -> None:
-        """Vide la file et met a jour l'affichage. Seul a toucher aux widgets."""
+        """Vide la file et met a jour l'affichage. Seul a toucher aux widgets.
+
+        Toute erreur d'affichage est journalisee sans interrompre la boucle :
+        une exception qui remonte ici empecherait le `after` suivant d'etre
+        planifie, et l'interface resterait figee sur « traitement en cours »
+        sans que rien ne le signale.
+        """
         try:
             while True:
                 kind, payload = self._queue.get_nowait()
+                self._last_message_at = time.time()
 
-                if kind == "log":
-                    self._append_log(payload)
-                    self._light_phase(payload)
-                elif kind == "progress":
-                    self._update_progress(*payload)
-                elif kind == "result":
-                    self._add_result(*payload)
-                elif kind == "done":
-                    self._finish(payload)
-                elif kind == "failed":
-                    self._finish(None, payload)
+                try:
+                    if kind == "log":
+                        self._append_log(payload)
+                        self._light_phase(payload)
+                    elif kind == "progress":
+                        self._update_progress(*payload)
+                    elif kind == "result":
+                        self._add_result(*payload)
+                    elif kind == "done":
+                        self._finish(payload)
+                    elif kind == "failed":
+                        self._finish(None, payload)
+
+                except Exception as error:
+                    self._append_log(
+                        f"[ko] affichage « {kind} » : {type(error).__name__} : {error}")
 
         except queue.Empty:
             pass
 
         if self._running:
             self._update_elapsed()
+            self._check_watchdog()
             self.after(POLL_INTERVAL_MS, self._poll)
+
+    def _check_watchdog(self) -> None:
+        """Signale un traitement silencieux depuis trop longtemps.
+
+        Deux situations donnent la meme apparence de blocage : le thread de
+        travail s'est arrete sans rien dire, ou il est coince dans un appel
+        systeme. Le diagnostic distingue les deux.
+        """
+        silence = time.time() - self._last_message_at
+        if silence < WATCHDOG_SECONDS or self._watchdog_fired:
+            return
+
+        self._watchdog_fired = True
+        self._append_log(f"[ko] aucun message depuis {int(silence)} s.")
+
+        thread = self._worker_thread
+        if thread is not None and not thread.is_alive():
+            self._append_log("[ko] le thread de traitement s'est arrêté sans message.")
+            self._finish(None, "Le traitement s'est interrompu de façon inattendue.")
+            return
+
+        self._append_log("[ko] le traitement est bloqué. Pile d'exécution :")
+        for ligne in self._worker_stack():
+            self._append_log(f"    {ligne}")
+        self._append_log(
+            "[ko] la dernière ligne indique l'appel qui ne rend pas la main.")
+
+    def _worker_stack(self) -> list[str]:
+        """Pile d'execution courante du thread de travail.
+
+        Repond a la question « ou est-ce que ca bloque ? » sans avoir a
+        reproduire le probleme sous debogueur.
+        """
+        thread = self._worker_thread
+        if thread is None or thread.ident is None:
+            return ["thread de traitement introuvable"]
+
+        frame = sys._current_frames().get(thread.ident)
+        if frame is None:
+            return ["pile indisponible"]
+
+        lignes = []
+        for fichier, numero, fonction, code in traceback.extract_stack(frame):
+            lignes.append(f"{os.path.basename(fichier)}:{numero} {fonction}() "
+                          f"{(code or '').strip()}")
+
+        # Les dernieres images sont les plus parlantes : c'est la que ca coince.
+        return lignes[-6:]
 
     # ------------------------------------------------------------------
     # Mise a jour de l'affichage

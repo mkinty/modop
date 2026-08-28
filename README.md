@@ -36,9 +36,8 @@ PyQGIS.
 uv run python main.py
 ```
 
-1. Renseigner **Dossier AUDIT_SNA** et **Répertoire de travail**, ou les
-   laisser vides pour utiliser les emplacements par défaut sur le Bureau. Le
-   bouton 📁 ouvre un sélecteur de dossier.
+1. Renseigner les trois chemins, ou les laisser vides pour utiliser les
+   emplacements par défaut. Le bouton 📁 ouvre un sélecteur de dossier.
 2. Saisir le nom du lot, par exemple `Lot7`.
 3. Saisir les codes INSEE, **un par ligne**, ou cliquer **Détecter** pour lire
    le répertoire QGIS du lot.
@@ -98,15 +97,17 @@ pas dans l'archive.
 
 ## Chemins
 
-Deux racines sont configurables depuis l'interface :
+Trois racines sont configurables depuis l'interface :
 
 | Racine | Défaut | Contient |
 |---|---|---|
-| Dossier AUDIT_SNA | `Bureau/AUDIT_SNA` | les lots en entrée et les livrables en sortie |
+| Dossier AUDIT_SNA | `Bureau/AUDIT_SNA` | les dossiers de commune produits (`Dep45/45001/…`) |
+| Préparation livrables | `<AUDIT_SNA>/LIVRABLE` | les lots en entrée : fichiers d'audit et données QGIS |
 | Répertoire de travail | `Bureau/WORKSPACE` | le projet modèle et les fichiers de passage |
 
-Tout le reste en découle. Changer la racine AUDIT_SNA déplace d'un coup les
-chemins des lots, des fichiers d'audit et des dossiers de commune.
+Tout le reste en découle. Le dossier de préparation suit AUDIT_SNA tant qu'on
+ne lui fixe pas d'emplacement propre — utile lorsque les lots arrivent d'un
+partage réseau alors que les livrables restent sur le poste.
 
 Le choix vaut aussi en ligne de commande : `python -m modop.services.workflow`
 charge la configuration enregistrée avant de traiter.

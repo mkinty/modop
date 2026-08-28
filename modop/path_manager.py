@@ -54,31 +54,44 @@ TRACKING_FILE = os.path.join(BUREAU, "livrables_communes_faites.txt")
 # dépendance, et les tests continuent d'isoler l'ensemble en redirigeant
 # BUREAU.
 
-#: Noms des dossiers par défaut, relatifs au Bureau.
+#: Noms des dossiers par défaut. Les deux premiers sont relatifs au Bureau,
+#: le troisième au dossier AUDIT_SNA.
 DEFAULT_AUDIT_SNA_DIR = "AUDIT_SNA"
 DEFAULT_WORKSPACE_DIR = "WORKSPACE"
+DEFAULT_DELIVERABLE_DIR = "LIVRABLE"
 
 _audit_sna_override: str | None = None
 _workspace_override: str | None = None
+_deliverable_override: str | None = None
 
 
-def set_paths(audit_sna: str | None = None, workspace: str | None = None) -> None:
+def _clean(valeur: str | None) -> str | None:
+    """Normalise une surcharge : une saisie vide vaut absence de surcharge."""
+    return valeur.strip() if valeur and valeur.strip() else None
+
+
+def set_paths(audit_sna: str | None = None, workspace: str | None = None,
+              deliverable: str | None = None) -> None:
     """Redéfinit les racines du programme.
 
-    Une valeur vide ou None rétablit l'emplacement par défaut sur le Bureau.
+    Une valeur vide ou None rétablit l'emplacement par défaut.
 
     Args:
         audit_sna: dossier AUDIT_SNA choisi par l'utilisateur.
         workspace: répertoire de travail choisi par l'utilisateur.
+        deliverable: dossier de préparation des livrables. Par défaut, un
+            sous-dossier d'AUDIT_SNA ; il peut être ailleurs, par exemple sur
+            un partage réseau.
     """
-    global _audit_sna_override, _workspace_override
-    _audit_sna_override = audit_sna.strip() if audit_sna and audit_sna.strip() else None
-    _workspace_override = workspace.strip() if workspace and workspace.strip() else None
+    global _audit_sna_override, _workspace_override, _deliverable_override
+    _audit_sna_override = _clean(audit_sna)
+    _workspace_override = _clean(workspace)
+    _deliverable_override = _clean(deliverable)
 
 
 def reset_paths() -> None:
-    """Rétablit les deux emplacements par défaut."""
-    set_paths(None, None)
+    """Rétablit tous les emplacements par défaut."""
+    set_paths(None, None, None)
 
 
 def default_audit_sna_path() -> str:
@@ -89,6 +102,15 @@ def default_audit_sna_path() -> str:
 def default_workspace_path() -> str:
     """Emplacement par défaut du répertoire de travail."""
     return os.path.join(BUREAU, DEFAULT_WORKSPACE_DIR)
+
+
+def default_prepare_deliverable_path() -> str:
+    """Emplacement par défaut du dossier de préparation des livrables.
+
+    Dépend du dossier AUDIT_SNA courant : redéfinir celui-ci déplace aussi
+    celui-là, tant qu'aucune surcharge propre n'est fixée.
+    """
+    return os.path.join(_audit_sna_path(), DEFAULT_DELIVERABLE_DIR)
 
 
 # -----------------------------------------------------------------------
@@ -108,9 +130,12 @@ def _audit_sna_path() -> str:
 # ------ RÉPERTOIRE DE LA PRÉPARATION DES LIVRABLES ---------------------
 # -----------------------------------------------------------------------
 def _prepare_deliverable_path() -> str:
-    """Chemins du dossier 'préparation livrable'"""
-    # return os.path.join(_audit_sna_path(), "préparation livrable")
-    return os.path.join(_audit_sna_path(), "LIVRABLE")
+    """Chemin du dossier de préparation des livrables.
+
+    Renvoie le chemin choisi par l'utilisateur s'il en a fixé un, sinon le
+    sous-dossier LIVRABLE du dossier AUDIT_SNA.
+    """
+    return _deliverable_override or default_prepare_deliverable_path()
 
 
 # Chemin du lot de préparation livrable

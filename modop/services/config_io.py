@@ -26,6 +26,7 @@ DEFAULT_CONFIG = {
     # Chemins paramétrables. Vide = emplacement par défaut sur le Bureau.
     "audit_sna_path": "",
     "workspace_path": "",
+    "deliverable_path": "",
     "sort_excel": True,
     "clean_workspace": True,
     "strict": False,
@@ -130,6 +131,7 @@ def apply_paths(config: dict) -> None:
     path_manager.set_paths(
         audit_sna=config.get("audit_sna_path", ""),
         workspace=config.get("workspace_path", ""),
+        deliverable=config.get("deliverable_path", ""),
     )
 
 
