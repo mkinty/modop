@@ -16,36 +16,40 @@ modop/
 │   └── STRUCTURE.md                 ce document
 │
 ├── modop/
-│   ├── path_manager.py              tous les chemins du programme            152
-│   ├── constants.py                 colonnes de tri, couches de centrage      14
+│   ├── path_manager.py              tous les chemins du programme            247
+│   ├── constants.py                 colonnes de tri, variables PPT           40
 │   │
 │   ├── services/                    logique métier
-│   │   ├── workflow.py              orchestration commune et lot             366
+│   │   ├── workflow.py              orchestration commune et lot             445
 │   │   ├── excel.py                 tri du fichier d'audit                   440
+│   │   ├── analyse.py               liens et PPT vierges du dossier Analyse  220
+│   │   ├── ppt.py                   génération d'un PPT depuis le template   87
 │   │   ├── files.py                 copie, purge, découverte des communes    173
 │   │   ├── qgis_project.py          lecture et écriture du .qgz              452
 │   │   ├── qgis_datasource.py       calcul d'emprise depuis les CSV          186
 │   │   ├── archive.py               constitution du ZIP livrable             147
-│   │   └── config_io.py             préférences de l'interface               113
+│   │   └── config_io.py             préférences de l'interface               153
 │   │
 │   └── ui/                          interface graphique
-│       ├── application.py           fenêtre Tkinter                          627
-│       └── theme.py                 couleurs, polices, libellés               85
+│       ├── application.py           fenêtre Tkinter                          1088
+│       └── theme.py                 couleurs, polices, libellés               90
 │
-└── tests/                           199 tests
+└── tests/                           287 tests
     ├── conftest.py                  fixtures partagées                       249
     ├── test_excel.py                                                         319
     ├── test_qgis_project.py                                                  337
-    ├── test_workflow.py                                                      267
+    ├── test_workflow.py             (dont PPT vierges)                       412
+    ├── test_analyse.py              liens et PPT vierges                     194
     ├── test_lot.py                                                           228
     ├── test_archive.py                                                       155
     ├── test_qgis_datasource.py                                               129
     ├── test_files.py                                                         107
-    ├── test_config_io.py                                                      96
-    └── test_ui_theme.py                                                       70
+    ├── test_paths_config.py                                                  270
+    ├── test_config_io.py                                                     131
+    └── test_ui_theme.py                                                       71
 ```
 
-Total : environ 2 300 lignes de code, 1 960 lignes de tests.
+Total : environ 3 300 lignes de code et de tests.
 
 ## API publique
 
@@ -53,17 +57,20 @@ Total : environ 2 300 lignes de code, 1 960 lignes de tests.
 
 ```python
 prepare_commune_deliverable(lot_name, insee, zoom_layer=None, project_path=None,
-                            sort_excel=True, clean_workspace=True,
-                            strict=False, verbose=True) -> DeliverableResult
+                            sort_excel=True, clean_workspace=True, strict=False,
+                            pptx_template_path=None, generate_ppts=False,
+                            verbose=True) -> DeliverableResult
 
 prepare_lot_deliverables(lot_name, insee_codes=None, zoom_layer=None,
                          project_path=None, sort_excel=True, strict=False,
-                         stop_on_error=False, on_start=None, on_result=None,
+                         stop_on_error=False, pptx_template_path=None,
+                         generate_ppts=False, on_start=None, on_result=None,
                          verbose=True) -> LotResult
 ```
 
-`DeliverableResult` : `insee`, `excel_file`, `copied_files`, `project_file`,
-`archive_file`, `zoom_layer`, `warnings`, `ok`, `complete`
+`DeliverableResult` : `insee`, `excel_file`, `ppt_liens`, `ppt_generes`,
+`copied_files`, `project_file`, `archive_file`, `zoom_layer`, `warnings`,
+`ok`, `complete`
 
 `LotResult` : `lot_name`, `results`, `errors`, `processed`, `succeeded`,
 `failed`, `ok`, `warnings`
@@ -73,6 +80,45 @@ prepare_lot_deliverables(lot_name, insee_codes=None, zoom_layer=None,
 ```python
 format_excel_file(lot_name, insee, verbose=True) -> str | None
 ```
+
+### `services/analyse.py` — liens et PPT vierges du dossier Analyse
+
+```python
+generer_ppts_commune(excel_path, insee, pptx_template_path, generate_ppts,
+                     parallel=True, verbose=True) -> AnalysePptResult
+valider_template_ppt(pptx_template_path) -> None   # lève PptTemplateError
+ppt_name_for(id_err) -> str            # "cas_analyse_<id_err>.pptx"
+build_ppt_link(insee, id_err) -> str   # chemin dans le dossier Analyse
+```
+
+`AnalysePptResult` : `total`, `liens_completes`, `ppt_generes`, `erreurs`,
+`avertissements`
+
+`PptTemplateError` (`RuntimeError`) : levée si `generate_ppts` est vrai sans
+template PPT valide configuré. Erreur de configuration, volontairement
+**non** traitée comme un échec de commune : `workflow.prepare_lot_deliverables`
+la valide une fois pour tout le lot, avant même la première commune, et la
+laisse remonter telle quelle plutôt que de l'enregistrer dans
+`LotResult.errors` — elle arrête tout le lot, contrairement aux autres
+anomalies (audit absent, couche QGIS manquante…) qui n'affectent que la
+commune concernée.
+
+Sans effet si `generate_ppts` est faux (case décochée, valeur par défaut) :
+le fichier Excel n'est même pas ouvert. Coché, pour chaque ligne de l'audit
+identifiée par la colonne `ID erreur`, la colonne `Lien vers le .ppt` est
+complétée et le PPT généré. Repris du programme BPA : même nommage de
+fichier, mêmes variables de template (`constants.VARIABLES`), même
+génération en parallèle.
+
+### `services/ppt.py` — génération d'un PPT depuis le template
+
+```python
+generate_ppt(row, output_path, pptx_template_path) -> None
+```
+
+Substitution paragraphe par paragraphe des variables du template par les
+valeurs de la ligne (voir le docstring du module pour le détail du
+découpage PowerPoint). Code repris à l'identique du programme BPA.
 
 ### `services/files.py` — fichiers et répertoire de travail
 
@@ -160,7 +206,9 @@ log_color(line) -> str
 
 ```
 services.workflow      -> constants, path_manager,
-                          services.{excel, files, qgis_project, archive}
+                          services.{excel, analyse, files, qgis_project, archive}
+services.analyse       -> constants, path_manager, services.{excel, ppt}
+services.ppt           -> constants
 services.archive       -> path_manager, services.files
 services.qgis_project  -> services.qgis_datasource
 services.excel         -> constants, path_manager
@@ -205,11 +253,12 @@ production du livrable cartographique.
 | `python -m modop.services.workflow` | lot entier, en console |
 | `python -m modop.services.workflow 45001 45002` | communes choisies |
 | `python -m modop.services.excel` | tri de l'audit seul |
+| `python -m modop.services.analyse` | liens et PPT vierges seuls (voir son bloc `__main__`) |
 | `python -m modop.services.files` | copie seule |
 | `python -m modop.services.qgis_project` | inventaire des couches |
 | `python -m modop.services.qgis_project "carto SNA OK"` | avec couche imposée |
 | `python -m modop.services.archive` | constitution du ZIP seul |
-| `pytest -q` | les 199 tests |
+| `pytest -q` | les 287 tests |
 
 ## Où intervenir
 
@@ -218,6 +267,8 @@ production du livrable cartographique.
 | Chemin ou nom de livrable | `path_manager.py` |
 | Couches de centrage | `constants.py` |
 | Colonnes de tri de l'audit | `constants.py` |
+| Nom des PPT, variables du template | `constants.py` — `PPT_NAME_TEMPLATE`, `VARIABLES` |
+| Chemin du template PPT vierge | interface (champ « Template PPT vierge ») ou `path_manager.set_paths(pptx_template=...)` |
 | Extensions embarquées dans le ZIP | `archive.py`, `DELIVERABLE_EXTENSIONS` |
 | Apparence de l'interface | `ui/theme.py` |
 | Nouvelle étape du traitement | nouveau module dans `services/`, appelé par `workflow.py` |

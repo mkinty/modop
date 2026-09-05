@@ -63,6 +63,7 @@ DEFAULT_DELIVERABLE_DIR = "LIVRABLE"
 _audit_sna_override: str | None = None
 _workspace_override: str | None = None
 _deliverable_override: str | None = None
+_pptx_template_override: str | None = None
 
 
 def _clean(valeur: str | None) -> str | None:
@@ -71,7 +72,7 @@ def _clean(valeur: str | None) -> str | None:
 
 
 def set_paths(audit_sna: str | None = None, workspace: str | None = None,
-              deliverable: str | None = None) -> None:
+              deliverable: str | None = None, pptx_template: str | None = None) -> None:
     """Redéfinit les racines du programme.
 
     Une valeur vide ou None rétablit l'emplacement par défaut.
@@ -82,16 +83,30 @@ def set_paths(audit_sna: str | None = None, workspace: str | None = None,
         deliverable: dossier de préparation des livrables. Par défaut, un
             sous-dossier d'AUDIT_SNA ; il peut être ailleurs, par exemple sur
             un partage réseau.
+        pptx_template: chemin du template PPT vierge choisi par
+            l'utilisateur, utilisé pour générer les PPT du dossier Analyse.
+            Aucun défaut : une valeur vide désactive la génération.
     """
     global _audit_sna_override, _workspace_override, _deliverable_override
+    global _pptx_template_override
     _audit_sna_override = _clean(audit_sna)
     _workspace_override = _clean(workspace)
     _deliverable_override = _clean(deliverable)
+    _pptx_template_override = _clean(pptx_template)
 
 
 def reset_paths() -> None:
     """Rétablit tous les emplacements par défaut."""
-    set_paths(None, None, None)
+    set_paths(None, None, None, None)
+
+
+def pptx_template_path() -> str:
+    """Chemin du template PPT vierge choisi par l'utilisateur.
+
+    Chaîne vide si aucun template n'a été configuré : la génération des PPT
+    est alors désactivée, sans que ce soit une erreur.
+    """
+    return _pptx_template_override or ""
 
 
 def default_audit_sna_path() -> str:

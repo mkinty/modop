@@ -138,6 +138,45 @@ def test_stop_on_error_interrompt_le_lot(lot_communes):
         )
 
 
+def test_case_ppt_cochee_sans_template_arrete_tout_le_lot(lot_communes):
+    """Le blocage sur template invalide n'est pas un échec par commune : il
+    arrête le lot entier, avant même la première commune traitée."""
+    from modop.services.analyse import PptTemplateError
+
+    with pytest.raises(PptTemplateError):
+        prepare_lot_deliverables(
+            LOT, ["45001", "45002"], generate_ppts=True, verbose=False,
+        )
+
+
+def test_blocage_avant_toute_commune_traitee(lot_communes):
+    """Le contrôle du template a lieu avant même de commencer la première
+    commune : aucun callback `on_start` n'est appelé."""
+    from modop.services.analyse import PptTemplateError
+
+    appels = []
+
+    with pytest.raises(PptTemplateError):
+        prepare_lot_deliverables(
+            LOT, ["45001", "45002"], generate_ppts=True, verbose=False,
+            on_start=lambda *args: appels.append(args),
+        )
+
+    assert appels == []
+
+
+def test_stop_on_error_sans_effet_sur_le_blocage_template(lot_communes):
+    """Le blocage sur template invalide s'applique même si `stop_on_error`
+    est faux : ce n'est pas une simple histoire d'arrêt au premier échec."""
+    from modop.services.analyse import PptTemplateError
+
+    with pytest.raises(PptTemplateError):
+        prepare_lot_deliverables(
+            LOT, ["45001", "45002"], generate_ppts=True, stop_on_error=False,
+            verbose=False,
+        )
+
+
 def test_lot_vide(bureau):
     with pytest.raises(ValueError, match="Aucune commune"):
         prepare_lot_deliverables(LOT, [], verbose=False)

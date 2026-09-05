@@ -94,3 +94,39 @@ def test_sauvegarde_filtre_les_cles_inconnues(tmp_path):
 def test_sauvegarde_cree_le_repertoire(tmp_path):
     chemin = str(tmp_path / "nouveau" / "config.json")
     assert save_config(DEFAULT_CONFIG, chemin)
+
+
+# ---------------------------------------------------------------------------
+# PPT vierges : template et case a cocher
+# ---------------------------------------------------------------------------
+
+def test_pptx_template_path_vide_par_defaut():
+    assert DEFAULT_CONFIG["pptx_template_path"] == ""
+
+
+def test_generate_ppts_decoche_par_defaut():
+    """La case doit etre vide par defaut : les PPT ne sont generes qu'a la
+    demande explicite de l'utilisateur."""
+    assert DEFAULT_CONFIG["generate_ppts"] is False
+
+
+def test_pptx_template_persiste(tmp_path):
+    chemin = str(tmp_path / "config.json")
+    config = dict(DEFAULT_CONFIG, pptx_template_path=str(tmp_path / "modele.pptx"),
+                  generate_ppts=True)
+
+    save_config(config, chemin)
+    relu = load_config(chemin)
+
+    assert relu["pptx_template_path"] == str(tmp_path / "modele.pptx")
+    assert relu["generate_ppts"] is True
+
+
+def test_apply_paths_pose_le_template(bureau, tmp_path):
+    from modop import path_manager
+    from modop.services.config_io import apply_paths
+
+    apply_paths({"pptx_template_path": str(tmp_path / "modele.pptx")})
+    assert path_manager.pptx_template_path() == str(tmp_path / "modele.pptx")
+
+    path_manager.reset_paths()

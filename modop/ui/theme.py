@@ -24,6 +24,7 @@ C_AMBER = "#ffbe55"       # avertissement
 C_RED = "#ff6b7a"         # erreur
 C_PURPLE = "#b58cf0"      # etape QGIS
 C_CYAN = "#4fe0d0"        # etape archive
+C_PINK = "#ff8fb3"        # etape PPT
 
 # ── Page journal ──────────────────────────────────────────────────
 C_LOG_BG = "#05080f"      # fond du journal
@@ -42,6 +43,7 @@ F_MONO = "Consolas"
 PHASES = [
     ("dossier", "Dossiers", C_TEXT2),
     ("excel", "Audit", C_ACCENT),
+    ("ppt", "PPT", C_PINK),
     ("purge", "Purge", C_MUTED),
     ("copie", "Copie", C_GREEN),
     ("qgis", "QGIS", C_PURPLE),
@@ -52,6 +54,7 @@ PHASES = [
 LOG_COLORS = {
     "[dossier]": C_TEXT2,
     "[excel]": C_ACCENT,
+    "[ppt]": C_PINK,
     "[purge]": C_MUTED,
     "[copie]": C_GREEN,
     "[qgis]": C_PURPLE,

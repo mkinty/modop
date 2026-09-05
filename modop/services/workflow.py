@@ -1,14 +1,16 @@
 """Orchestration du livrable d'une commune.
 
-Enchaine les sept etapes du mode operatoire :
+Enchaine les huit etapes du mode operatoire :
 
     1. creer l'arborescence de la commune (Carte et Analyse) ;
     2. trier le fichier Excel d'audit et le deposer dans le dossier commune ;
-    3. copier les fichiers QGIS de la commune vers le repertoire de travail ;
-    4. ouvrir le projet QGIS modele ;
-    5. controler les couches, puis centrer la carte sur la commune ;
-    6. enregistrer le projet au nom de la commune ;
-    7. compresser les .csv et le projet, et deposer l'archive dans Carte.
+    3. completer la colonne "Lien vers le .ppt" de l'audit et, si demande,
+       generer les PPT vierges correspondants dans le dossier Analyse ;
+    4. copier les fichiers QGIS de la commune vers le repertoire de travail ;
+    5. ouvrir le projet QGIS modele ;
+    6. controler les couches, puis centrer la carte sur la commune ;
+    7. enregistrer le projet au nom de la commune ;
+    8. compresser les .csv et le projet, et deposer l'archive dans Carte.
 
 Chaque etape est deleguee a un module dedie. Ce module ne fait qu'enchainer
 et rapporter.
@@ -36,6 +38,11 @@ from modop.path_manager import (
     _qgis_saved_project_path,
     _workspace_path,
 )
+from modop.services.analyse import (
+    PptTemplateError,
+    generer_ppts_commune,
+    valider_template_ppt,
+)
 from modop.services.archive import build_deliverable_archive
 from modop.services.excel import format_excel_file
 from modop.services.files import copy_commune_files, list_communes, purge_workspace
@@ -50,6 +57,8 @@ class DeliverableResult:
     carte_dir: str = ""
     analysis_dir: str = ""
     excel_file: str = ""
+    ppt_liens: int = 0
+    ppt_generes: int = 0
     copied_files: list[str] = field(default_factory=list)
     project_file: str = ""
     archive_file: str = ""
@@ -127,6 +136,34 @@ def _sort_audit_file(lot_name: str, insee: str, warnings: list[str]) -> str:
     return result
 
 
+def _generer_ppts_analyse(
+    excel_file: str,
+    insee: str,
+    pptx_template_path: str | None,
+    generate_ppts: bool,
+    warnings: list[str],
+    verbose: bool,
+) -> tuple[int, int]:
+    """Complète la colonne "Lien vers le .ppt" et génère les PPT vierges.
+
+    Le contrôle du template (obligatoire si `generate_ppts` est vrai) se
+    fait quel que soit l'état de l'audit : un template manquant ou
+    introuvable est une erreur de configuration, indépendante de la présence
+    du fichier Excel. Voir `services.analyse.generer_ppts_commune`.
+
+    Returns:
+        (liens complétés, PPT générés).
+
+    Raises:
+        PptTemplateError: la case est cochée sans template PPT valide.
+    """
+    resultat = generer_ppts_commune(
+        excel_file, insee, pptx_template_path, generate_ppts, verbose=verbose,
+    )
+    warnings.extend(resultat.avertissements)
+    return resultat.liens_completes, resultat.ppt_generes
+
+
 def _pick_zoom_layer(project: QgisProject, requested: str | None) -> str:
     """Determine la couche sur laquelle centrer la carte.
 
@@ -147,6 +184,8 @@ def prepare_commune_deliverable(
     sort_excel: bool = True,
     clean_workspace: bool = True,
     strict: bool = False,
+    pptx_template_path: str | None = None,
+    generate_ppts: bool = False,
     verbose: bool = True,
 ) -> DeliverableResult:
     """Produit le livrable complet d'une commune : audit trie et archive QGIS.
@@ -163,6 +202,11 @@ def prepare_commune_deliverable(
             preservant le projet modele. A laisser actif pour eviter qu'une
             commune herite des fichiers d'une autre.
         strict: si True, la moindre anomalie interrompt le traitement.
+        pptx_template_path: chemin du template PPT vierge, configurable
+            depuis l'interface. Sans effet si `generate_ppts` est faux.
+        generate_ppts: correspond a la case a cocher de l'interface. Vide par
+            defaut : les PPT ne sont generes que si elle est cochee. La
+            colonne "Lien vers le .ppt" est completee dans tous les cas.
         verbose: affiche la progression.
 
     Returns:
@@ -201,7 +245,26 @@ def prepare_commune_deliverable(
             log(f"[excel] ⚠ {result.warnings[-1]}")
         stop_if_strict()
 
-    # -- 3. Copie des fichiers vers le repertoire de travail ---------------
+    # -- 3. Liens PPT et generation des PPT vierges ------------------------
+    # Le controle du template (si `generate_ppts`) est volontairement non
+    # rattrape ici : une erreur de configuration ne doit pas etre reduite a
+    # un simple avertissement. Elle est en outre re-levee telle quelle par
+    # `prepare_lot_deliverables`, qui ne la traite pas comme un echec de
+    # cette seule commune (voir plus bas).
+    try:
+        result.ppt_liens, result.ppt_generes = _generer_ppts_analyse(
+            result.excel_file, insee, pptx_template_path, generate_ppts,
+            result.warnings, verbose,
+        )
+    except PptTemplateError as error:
+        log(f"[ppt] ❌ {error}")
+        raise
+    if result.ppt_liens:
+        log(f"[ppt] {result.ppt_liens} lien(s) complété(s)"
+            + (f", {result.ppt_generes} PPT généré(s)" if generate_ppts else ""))
+    stop_if_strict()
+
+    # -- 4. Copie des fichiers vers le repertoire de travail ---------------
     source_project = project_path or _qgis_project_path()
 
     # La purge evite qu'une commune herite des fichiers de la precedente :
@@ -211,12 +274,12 @@ def prepare_commune_deliverable(
 
     result.copied_files = copy_commune_files(lot_name, insee, verbose=verbose)
 
-    # -- 4. Ouverture du projet -------------------------------------------
+    # -- 5. Ouverture du projet -------------------------------------------
     project = QgisProject.open(source_project)
     log(f"[qgis] projet ouvert : {os.path.basename(source_project)} "
         f"({len(project.layers)} couche(s))")
 
-    # -- 5. Controles et centrage ------------------------------------------
+    # -- 6. Controles et centrage ------------------------------------------
     # Le projet est ouvert depuis le workspace : les sources relatives
     # pointent donc vers les fichiers qui viennent d'etre copies.
     anomalies = project.check()
@@ -230,13 +293,13 @@ def prepare_commune_deliverable(
     log(f"[qgis] centrage sur '{result.zoom_layer}' "
         f"({extent.xmin:.0f}, {extent.ymin:.0f}) -> ({extent.xmax:.0f}, {extent.ymax:.0f})")
 
-    # -- 6. Enregistrement au nom de la commune ----------------------------
+    # -- 7. Enregistrement au nom de la commune ----------------------------
     # Meme repertoire que les donnees, pour que les sources relatives restent
     # valides.
     result.project_file = project.save_as(_qgis_saved_project_path(insee))
     log(f"[qgis] enregistre : {os.path.basename(result.project_file)}")
 
-    # -- 7. Archive du livrable --------------------------------------------
+    # -- 8. Archive du livrable --------------------------------------------
     result.archive_file = build_deliverable_archive(
         insee,
         project_file=result.project_file,
@@ -258,6 +321,8 @@ def prepare_lot_deliverables(
     sort_excel: bool = True,
     strict: bool = False,
     stop_on_error: bool = False,
+    pptx_template_path: str | None = None,
+    generate_ppts: bool = False,
     on_start: Callable[[int, int, str], None] | None = None,
     on_result: Callable[[str, "DeliverableResult | None", str], None] | None = None,
     verbose: bool = True,
@@ -278,6 +343,10 @@ def prepare_lot_deliverables(
         sort_excel: traite les fichiers d'audit.
         strict: une anomalie fait echouer la commune concernee.
         stop_on_error: interrompt le lot a la premiere commune en echec.
+        pptx_template_path: chemin du template PPT vierge, commun a toutes
+            les communes.
+        generate_ppts: correspond a la case a cocher de l'interface. Vide par
+            defaut : les PPT ne sont generes que si elle est cochee.
         on_start: appele avant chaque commune, avec (position, total, insee).
             Permet a une interface de suivre l'avancement.
         on_result: appele apres chaque commune, avec (insee, resultat, erreur).
@@ -290,12 +359,26 @@ def prepare_lot_deliverables(
 
     Raises:
         ValueError: aucune commune a traiter.
+        PptTemplateError: `generate_ppts` est vrai sans template PPT valide
+            configuré. Erreur de configuration : arrête tout le lot avant
+            même de commencer la première commune, contrairement aux autres
+            erreurs qui ne font échouer que la commune concernée.
         Exception: relayee telle quelle si `stop_on_error`.
     """
 
     def log(message: str) -> None:
         if verbose:
             print(message)
+
+    # Erreur de configuration, pas une anomalie de commune : verifiee une
+    # bonne fois pour toutes avant de commencer, plutot que de la decouvrir
+    # au milieu du lot sur la premiere commune traitee.
+    if generate_ppts:
+        try:
+            valider_template_ppt(pptx_template_path)
+        except PptTemplateError as error:
+            log(f"[ppt] ❌ {error}")
+            raise
 
     # Les codes peuvent arriver en entiers : [45001, 45002].
     if insee_codes is None:
@@ -325,12 +408,20 @@ def prepare_lot_deliverables(
                 sort_excel=sort_excel,
                 clean_workspace=True,
                 strict=strict,
+                pptx_template_path=pptx_template_path,
+                generate_ppts=generate_ppts,
                 verbose=verbose,
             )
             result.results[insee] = commune
 
             if on_result is not None:
                 on_result(insee, commune, "")
+
+        except PptTemplateError:
+            # Erreur de configuration : ne doit pas etre reduite a un echec
+            # de cette seule commune. Arrete tout le lot, quel que soit
+            # `stop_on_error`.
+            raise
 
         except Exception as error:
             # Une commune en echec ne doit pas faire perdre les precedentes.
@@ -369,13 +460,18 @@ if __name__ == "__main__":
 
     from modop.services.config_io import load_and_apply
 
-    # Les chemins choisis dans l'interface s'appliquent aussi en console.
-    load_and_apply()
+    # Les chemins et options choisis dans l'interface s'appliquent aussi en
+    # console (dont le template PPT et la case "Générer les PPT").
+    _config = load_and_apply()
 
     LOT = "Lot7"
     codes = sys.argv[1:] or None
 
-    bilan = prepare_lot_deliverables(LOT, codes)
+    bilan = prepare_lot_deliverables(
+        LOT, codes,
+        pptx_template_path=_config.get("pptx_template_path") or None,
+        generate_ppts=_config.get("generate_ppts", False),
+    )
 
     print()
     for insee in bilan.processed:

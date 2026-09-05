@@ -38,11 +38,18 @@ uv run python main.py
 
 1. Renseigner les trois chemins, ou les laisser vides pour utiliser les
    emplacements par défaut. Le bouton 📁 ouvre un sélecteur de dossier.
-2. Saisir le nom du lot, par exemple `Lot7`.
-3. Saisir les codes INSEE, **un par ligne**, ou cliquer **Détecter** pour lire
+2. Renseigner le **template PPT vierge** (bouton 📁 : sélecteur de fichier
+   `.pptx` cette fois) si la case **Générer les PPT** doit être cochée : il
+   est alors obligatoire, faute de quoi le traitement de la commune est
+   interrompu.
+3. Saisir le nom du lot, par exemple `Lot7`.
+4. Saisir les codes INSEE, **un par ligne**, ou cliquer **Détecter** pour lire
    le répertoire QGIS du lot.
-4. Cliquer **Lancer le traitement**.
-5. Suivre l'avancement, puis consulter **Journal** pour le détail.
+5. Cocher **Générer les PPT** si les liens et les PPT vierges doivent être
+   produits (case vide par défaut : sans elle, l'audit n'est pas touché et
+   le dossier `Analyse` reste vide).
+6. Cliquer **Lancer le traitement**.
+7. Suivre l'avancement, puis consulter **Journal** pour le détail.
 
 En fin de traitement, un signal sonore retentit et une synthèse s'affiche :
 nombre de communes traitées, livrables produits, échecs et avertissements. La
@@ -87,6 +94,7 @@ Pour chaque commune, dans cet ordre :
 |---|---|
 | **Dossiers** | Crée l'arborescence de la commune : `Carte` et `Analyse` |
 | **Audit** | Trie `audit_<insee>.xlsx` sur zone 1, zone 2, sens, et dépose la copie triée dans le dossier de la commune |
+| **PPT** | Si la case **Générer les PPT** est cochée : complète la colonne `Lien vers le .ppt` de l'audit trié et génère les PPT vierges correspondants dans `Analyse`. Requiert un template PPT valide, sinon le traitement de la commune est interrompu. Décochée (défaut), cette étape n'a aucun effet |
 | **Purge** | Vide le répertoire de travail, en préservant le projet modèle |
 | **Copie** | Copie les fichiers QGIS de la commune vers le répertoire de travail |
 | **QGIS** | Ouvre le projet modèle, contrôle les couches, centre la carte sur la commune, enregistre au nom de la commune |
@@ -94,6 +102,38 @@ Pour chaque commune, dans cet ordre :
 
 Le fichier Excel est livré à part, dans le dossier de la commune : il n'entre
 pas dans l'archive.
+
+## PPT vierges du dossier Analyse
+
+Cette étape n'a d'effet que si la case **Générer les PPT** est cochée (vide
+par défaut) : décochée, ni la colonne `Lien vers le .ppt`, ni le dossier
+`Analyse` ne sont modifiés.
+
+Cochée, un **template PPT valide est obligatoire** : sans lui, **tout le
+traitement est arrêté** (le lot entier, pas seulement la commune en cours) et
+un message d'erreur clair est affiché — un template manquant ou introuvable
+est une erreur de configuration à corriger, pas une anomalie de commune à
+signaler et ignorer. Ce contrôle a lieu avant même de commencer la première
+commune : aucun dossier, aucun fichier n'est produit tant qu'il n'a pas
+réussi. Le template étant valide, pour chaque ligne de l'audit identifiée par
+la colonne `ID erreur`, la colonne `Lien vers le .ppt` est complétée avec le
+chemin du fichier `cas_analyse_<ID erreur>.pptx` dans le sous-dossier
+`Analyse` de la commune, et le PPT est généré.
+
+- **Case « Générer les PPT »** : vide par défaut. C'est elle qui déclenche
+  toute l'étape, y compris le contrôle du template.
+- **Template PPT vierge** : chemin configurable depuis l'interface (troisième
+  champ de la carte Configuration). Obligatoire dès que la case est cochée.
+
+Un template invalide n'est **pas** traité comme les autres anomalies (couche
+QGIS manquante, audit absent, etc.), qui elles ne font échouer que la
+commune concernée sans arrêter le reste du lot.
+
+Le mécanisme de génération (nommage des fichiers, substitution des variables
+du template, génération en parallèle) reprend celui du programme **BPA**
+(`services/ppt.py` et la fonction `faire_ppt()` de `services/traitement.py`) :
+même nom de fichier, mêmes variables (`modop/constants.py` — `VARIABLES`), de
+sorte qu'un même template PPT vierge peut servir aux deux programmes.
 
 ## Chemins
 
@@ -104,6 +144,7 @@ Trois racines sont configurables depuis l'interface :
 | Dossier AUDIT_SNA | `Bureau/AUDIT_SNA` | les dossiers de commune produits (`Dep45/45001/…`) |
 | Préparation livrables | `<AUDIT_SNA>/LIVRABLE` | les lots en entrée : fichiers d'audit et données QGIS |
 | Répertoire de travail | `Bureau/WORKSPACE` | le projet modèle et les fichiers de passage |
+| Template PPT vierge | *(aucun)* | le fichier `.pptx` utilisé pour générer les PPT du dossier `Analyse` |
 
 Tout le reste en découle. Le dossier de préparation suit AUDIT_SNA tant qu'on
 ne lui fixe pas d'emplacement propre — utile lorsque les lots arrivent d'un
@@ -123,7 +164,7 @@ Bureau/
 │   └── Dep45/45001/
 │       ├── audit_45001.xlsx                 ← audit trié (sortie)
 │       ├── Carte/Livrable Carto 45001.zip   ← livrable (sortie)
-│       └── Analyse/                         ← créé vide, pour ton travail
+│       └── Analyse/                         ← PPT générés (si demandé), sinon vide
 └── WORKSPACE/
     └── carte_audit maillage.qgz            ← projet modèle
 ```
@@ -152,7 +193,7 @@ fichier à modifier pour changer l'apparence.
 ## Tests
 
 ```powershell
-uv run pytest -q          # 199 tests
+uv run pytest -q          # 287 tests
 uv run pytest -v          # détail
 ```
 

@@ -2,11 +2,13 @@
   "audit_sna_path": "",
   "deliverable_path": "C:\\Users\\nmasl\\Desktop\\AUDIT_SNA\\LIVRABLE",
   "workspace_path": "",
+  "pptx_template_path": "C:\\Users\\nmasl\\Documents\\templates\\pptx_template_vierge.pptx",
   "lot_name": "Lot7",
   "insee_codes": "45001, 45002",
   "zoom_layer": "",
   "sort_excel": true,
   "clean_workspace": true,
   "strict": false,
-  "stop_on_error": false
+  "stop_on_error": false,
+  "generate_ppts": true
 }

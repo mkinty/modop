@@ -228,6 +228,35 @@ def test_livrables_persistes(bureau, tmp_path):
     assert path_manager._prepare_deliverable_path() == livrables
 
 
+# ---------------------------------------------------------------------------
+# Template PPT vierge
+# ---------------------------------------------------------------------------
+
+def test_pptx_template_absent_par_defaut(bureau):
+    assert path_manager.pptx_template_path() == ""
+
+
+def test_set_paths_pose_le_template(bureau, tmp_path):
+    modele = str(tmp_path / "modele.pptx")
+    path_manager.set_paths(pptx_template=modele)
+
+    assert path_manager.pptx_template_path() == modele
+
+
+def test_pptx_template_chaine_vide_retablit_le_defaut(bureau, tmp_path):
+    path_manager.set_paths(pptx_template=str(tmp_path / "modele.pptx"))
+    path_manager.set_paths(pptx_template="")
+
+    assert path_manager.pptx_template_path() == ""
+
+
+def test_reset_paths_retablit_le_template(bureau, tmp_path):
+    path_manager.set_paths(pptx_template=str(tmp_path / "modele.pptx"))
+    path_manager.reset_paths()
+
+    assert path_manager.pptx_template_path() == ""
+
+
 def test_entree_et_sortie_dissociees(bureau, tmp_path):
     """Cas visé : les lots arrivent d'un partage, les livrables restent locaux."""
     from modop.services.files import list_communes

@@ -319,3 +319,115 @@ def test_dossier_existant_non_ecrase(commune_files):
 def test_journal_signale_les_dossiers(commune_files, capsys):
     prepare_commune_deliverable(LOT, INSEE, sort_excel=False, verbose=True)
     assert "[dossier]" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# PPT vierges du dossier Analyse
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def excel_source_ppt(bureau):
+    """Audit realiste, complet cette fois des colonnes utilisees pour les PPT."""
+    import zipfile as _zipfile
+    from openpyxl import Workbook
+    from modop.path_manager import _excel_source_file_path
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["zone 1", "zone 2", "sens", "ID erreur", "Adresse",
+                      "INSEE", "Lien vers le .ppt"])
+    worksheet.append([2, "B", "Nord", "E1", "1 rue A", INSEE, None])
+    worksheet.append([1, "A", "Sud", "E2", "2 rue B", INSEE, None])
+
+    path = _excel_source_file_path(LOT, INSEE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    workbook.save(path)
+    return path
+
+
+@pytest.fixture
+def pptx_template(tmp_path):
+    """Template PPT minimal mais valide, pour la generation."""
+    import zipfile as _zipfile
+
+    slide_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+        "<p:cSld><p:spTree><p:sp><p:txBody>"
+        "<a:p><a:r><a:t>Adresse : Adresse</a:t></a:r></a:p>"
+        "</p:txBody></p:sp></p:spTree></p:cSld></p:sld>"
+    )
+    path = tmp_path / "template.pptx"
+    with _zipfile.ZipFile(path, "w", _zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("ppt/slides/slide1.xml", slide_xml)
+    return str(path)
+
+
+def test_rien_ne_change_par_defaut(commune_files, excel_source_ppt):
+    """La case n'etant pas cochee par defaut, l'audit n'est pas touche."""
+    from openpyxl import load_workbook
+
+    resultat = prepare_commune_deliverable(LOT, INSEE, verbose=False)
+
+    assert resultat.ppt_liens == 0
+    assert resultat.ppt_generes == 0
+    assert os.listdir(resultat.analysis_dir) == []
+
+    worksheet = load_workbook(resultat.excel_file).active
+    entetes = {worksheet.cell(1, c).value: c for c in range(1, worksheet.max_column + 1)}
+    col_lien = entetes["Lien vers le .ppt"]
+    liens = [worksheet.cell(r, col_lien).value for r in (2, 3)]
+    assert liens == [None, None]
+
+
+def test_case_cochee_sans_template_bloque_le_traitement(commune_files, excel_source_ppt):
+    """Case cochée sans template valide : le traitement de la commune
+    s'interrompt (PptTemplateError), il ne se contente pas d'un avertissement."""
+    from modop.services.analyse import PptTemplateError
+
+    with pytest.raises(PptTemplateError):
+        prepare_commune_deliverable(LOT, INSEE, generate_ppts=True, verbose=False)
+
+    # Le blocage intervient avant l'ecriture des liens : l'audit n'est pas modifie.
+    from openpyxl import load_workbook
+
+    worksheet = load_workbook(excel_source_ppt).active
+    entetes = {worksheet.cell(1, c).value: c for c in range(1, worksheet.max_column + 1)}
+    col_lien = entetes["Lien vers le .ppt"]
+    assert worksheet.cell(2, col_lien).value is None
+
+
+def test_ppt_generes_si_case_cochee(commune_files, excel_source_ppt, pptx_template):
+    resultat = prepare_commune_deliverable(
+        LOT, INSEE, pptx_template_path=pptx_template, generate_ppts=True,
+        verbose=False,
+    )
+
+    assert resultat.ppt_liens == 2
+    assert resultat.ppt_generes == 2
+    fichiers = os.listdir(resultat.analysis_dir)
+    assert len(fichiers) == 2
+    assert all(nom.startswith("cas_analyse_") and nom.endswith(".pptx")
+               for nom in fichiers)
+
+
+def test_journal_signale_le_blocage_sur_template(commune_files, excel_source_ppt, capsys):
+    from modop.services.analyse import PptTemplateError
+
+    with pytest.raises(PptTemplateError):
+        prepare_commune_deliverable(LOT, INSEE, generate_ppts=True, verbose=True)
+
+    assert "[ppt] ❌" in capsys.readouterr().out
+
+
+def test_journal_signale_l_etape_ppt(commune_files, excel_source_ppt, pptx_template, capsys):
+    prepare_commune_deliverable(
+        LOT, INSEE, pptx_template_path=pptx_template, generate_ppts=True, verbose=True,
+    )
+    assert "[ppt]" in capsys.readouterr().out
+
+
+def test_journal_muet_sur_ppt_si_case_decochee(commune_files, excel_source_ppt, capsys):
+    prepare_commune_deliverable(LOT, INSEE, verbose=True)
+    assert "[ppt]" not in capsys.readouterr().out

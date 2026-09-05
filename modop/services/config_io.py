@@ -27,10 +27,15 @@ DEFAULT_CONFIG = {
     "audit_sna_path": "",
     "workspace_path": "",
     "deliverable_path": "",
+    # Chemin du template PPT vierge. Vide = génération des PPT désactivée.
+    "pptx_template_path": "",
     "sort_excel": True,
     "clean_workspace": True,
     "strict": False,
     "stop_on_error": False,
+    # Case "Générer les PPT" : vide par défaut, les PPT ne sont générés que
+    # si l'utilisateur la coche explicitement.
+    "generate_ppts": False,
 }
 
 
@@ -132,6 +137,7 @@ def apply_paths(config: dict) -> None:
         audit_sna=config.get("audit_sna_path", ""),
         workspace=config.get("workspace_path", ""),
         deliverable=config.get("deliverable_path", ""),
+        pptx_template=config.get("pptx_template_path", ""),
     )
 
 

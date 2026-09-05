@@ -371,13 +371,15 @@ class App(tk.Tk):
         return champs[0], champs[1]
 
     def _entry_row(self, parent, label: str, hint: str = "",
-                   browse: bool = False) -> tk.Entry:
+                   browse: bool = False, browse_file: bool = False) -> tk.Entry:
         """Ligne comportant un champ texte sur une seule ligne.
 
         Args:
             label: libelle affiche a gauche.
             hint: aide affichee sous le champ.
             browse: ajoute un bouton de selection de dossier.
+            browse_file: ajoute un bouton de selection de fichier PPTX, a la
+                place du selecteur de dossier. Ignore si `browse` est faux.
         """
         row = self._row(parent)
         self._label(row, label)
@@ -392,7 +394,9 @@ class App(tk.Tk):
         entry.pack(side="left", fill="x", expand=True, ipady=5, ipadx=6)
 
         if browse:
-            tk.Button(line, text="📁", command=lambda: self._browse(entry),
+            command = (lambda: self._browse_file(entry)) if browse_file \
+                else (lambda: self._browse(entry))
+            tk.Button(line, text="📁", command=command,
                       bg=C_PANEL2, fg=C_TEXT2, font=(F_BODY, 10), relief="flat",
                       cursor="hand2", padx=10).pack(side="left", padx=(6, 0), ipady=3)
 
@@ -408,6 +412,17 @@ class App(tk.Tk):
             entry.delete(0, "end")
             entry.insert(0, os.path.normpath(chosen))
             self._refresh_deliverable_hint()
+
+    def _browse_file(self, entry: tk.Entry) -> None:
+        """Ouvre un selecteur de fichier PPTX et renseigne le champ."""
+        initial = os.path.dirname(entry.get()) or None
+        chosen = filedialog.askopenfilename(
+            initialdir=initial,
+            filetypes=[("Modèle PowerPoint", "*.pptx"), ("Tous les fichiers", "*.*")],
+        )
+        if chosen:
+            entry.delete(0, "end")
+            entry.insert(0, os.path.normpath(chosen))
 
     def _refresh_deliverable_hint(self) -> None:
         """Recalcule l'aide du dossier de préparation des livrables.
@@ -434,6 +449,10 @@ class App(tk.Tk):
         self.ent_workspace = self._entry_row(
             body, "Répertoire de travail",
             hint=f"Vide = {default_workspace_path()}", browse=True)
+        self.ent_pptx_template = self._entry_row(
+            body, "Template PPT vierge",
+            hint="Vide = génération des PPT désactivée",
+            browse=True, browse_file=True)
 
         # L'emplacement par défaut des livrables dérive du dossier AUDIT_SNA :
         # l'aide doit suivre la saisie, sinon elle indique un chemin faux.
@@ -505,13 +524,16 @@ class App(tk.Tk):
         self.var_clean = tk.BooleanVar(value=True)
         self.var_strict = tk.BooleanVar(value=False)
         self.var_stop = tk.BooleanVar(value=False)
+        # Vide par défaut : les PPT ne sont générés que si l'utilisateur
+        # coche explicitement la case.
+        self.var_generate_ppts = tk.BooleanVar(value=False)
 
-        # Libelles courts : les quatre options tiennent sur une seule ligne.
         for variable, label in (
             (self.var_sort_excel, "Trier l'audit"),
             (self.var_clean, "Purger le répertoire"),
             (self.var_strict, "Mode strict"),
             (self.var_stop, "Arrêter au 1er échec"),
+            (self.var_generate_ppts, "Générer les PPT"),
         ):
             tk.Checkbutton(
                 options, text=label, variable=variable, bg=C_CARD, fg=C_TEXT2,
@@ -581,12 +603,13 @@ class App(tk.Tk):
         body = self._card(parent, "Résultats", "📦", C_CYAN,
                           "Une ligne par commune traitée")
 
-        columns = ("commune", "statut", "couche", "archive")
+        columns = ("commune", "statut", "couche", "ppt", "archive")
         self.tree = ttk.Treeview(body, columns=columns, show="headings", height=8)
         for column, label, width in (
             ("commune", "Commune", 100),
             ("statut", "Statut", 110),
             ("couche", "Couche de centrage", 200),
+            ("ppt", "PPT", 130),
             ("archive", "Archive produite", 420),
         ):
             self.tree.heading(column, text=label)
@@ -610,6 +633,7 @@ class App(tk.Tk):
         self.ent_audit.insert(0, self.config_data["audit_sna_path"])
         self.ent_deliverable.insert(0, self.config_data["deliverable_path"])
         self.ent_workspace.insert(0, self.config_data["workspace_path"])
+        self.ent_pptx_template.insert(0, self.config_data["pptx_template_path"])
         self._refresh_deliverable_hint()
         self.ent_lot.insert(0, self.config_data["lot_name"])
         self.ent_zoom.insert(0, self.config_data["zoom_layer"])
@@ -623,6 +647,7 @@ class App(tk.Tk):
         self.var_clean.set(self.config_data["clean_workspace"])
         self.var_strict.set(self.config_data["strict"])
         self.var_stop.set(self.config_data["stop_on_error"])
+        self.var_generate_ppts.set(self.config_data["generate_ppts"])
 
     def _collect_config(self) -> dict:
         """Etat courant de la saisie."""
@@ -630,6 +655,7 @@ class App(tk.Tk):
             "audit_sna_path": self.ent_audit.get().strip(),
             "deliverable_path": self.ent_deliverable.get().strip(),
             "workspace_path": self.ent_workspace.get().strip(),
+            "pptx_template_path": self.ent_pptx_template.get().strip(),
             "lot_name": self.ent_lot.get().strip(),
             "insee_codes": ", ".join(parse_insee_codes(self.txt_insee.get("1.0", "end"))),
             "zoom_layer": self.ent_zoom.get().strip(),
@@ -637,6 +663,7 @@ class App(tk.Tk):
             "clean_workspace": self.var_clean.get(),
             "strict": self.var_strict.get(),
             "stop_on_error": self.var_stop.get(),
+            "generate_ppts": self.var_generate_ppts.get(),
         }
 
     def _on_close(self) -> None:
@@ -718,6 +745,8 @@ class App(tk.Tk):
             "sort_excel": self.var_sort_excel.get(),
             "strict": self.var_strict.get(),
             "stop_on_error": self.var_stop.get(),
+            "pptx_template_path": self.ent_pptx_template.get().strip() or None,
+            "generate_ppts": self.var_generate_ppts.get(),
         }
         self._last_message_at = time.time()
         self._watchdog_fired = False
@@ -884,15 +913,20 @@ class App(tk.Tk):
     def _add_result(self, insee: str, result, error: str) -> None:
         """Ajoute une ligne au tableau des resultats."""
         if result is None:
-            values = (insee, "❌ Échec", "", error)
+            values = (insee, "❌ Échec", "", "", error)
             tag = "ko"
-        elif result.warnings:
-            values = (insee, f"⚠ {len(result.warnings)} alerte(s)",
-                      result.zoom_layer, result.archive_file)
-            tag = "warn"
         else:
-            values = (insee, "✅ OK", result.zoom_layer, result.archive_file)
-            tag = "ok"
+            ppt_texte = f"{result.ppt_liens} lien(s)"
+            if result.ppt_generes:
+                ppt_texte += f" · {result.ppt_generes} PPT"
+
+            if result.warnings:
+                values = (insee, f"⚠ {len(result.warnings)} alerte(s)",
+                          result.zoom_layer, ppt_texte, result.archive_file)
+                tag = "warn"
+            else:
+                values = (insee, "✅ OK", result.zoom_layer, ppt_texte, result.archive_file)
+                tag = "ok"
 
         self.tree.insert("", "end", values=values, tags=(tag,))
         self.tree.see(self.tree.get_children()[-1])
