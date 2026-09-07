@@ -40,9 +40,12 @@ def _get_data_folder():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# Chemins des fichiers de configuration et de suivi des livrables faites (communes faites)
+# Chemins des fichiers de configuration et de suivi des livrables faits.
+# Tous deux dans le dossier de données de l'appli : jamais couvert par
+# l'Accès contrôlé aux dossiers de Windows Defender, contrairement au Bureau.
+# NB : TRACKING_FILE est défini mais pas encore consommé par le code.
 CONFIG_FILE = os.path.join(_get_data_folder(), "config.json")
-TRACKING_FILE = os.path.join(BUREAU, "livrables_communes_faites.txt")
+TRACKING_FILE = os.path.join(_get_data_folder(), "livrables_communes_faites.txt")
 
 
 # -----------------------------------------------------------------------
@@ -199,24 +202,78 @@ def _qgis_project_path() -> str:
 # ------ RÉPERTOIRE DÉPARTEMENT -------------------------------------------------------------
 # -------------------------------------------------------------------------------------------
 
+#: Dossiers « connus » de Windows protégés par défaut par l'Accès contrôlé
+#: aux dossiers (protection anti-rançongiciel de Windows Defender). Un
+#: exécutable non autorisé — python.exe, l'.exe MODOP — ne peut PAS y écrire,
+#: y compris quand OneDrive les redirige (« Sauvegarde » de Documents /
+#: Bureau). Une bibliothèque SharePoint synchronisée, elle, n'est pas un
+#: dossier connu : elle est donc inscriptible.
+_DOSSIERS_PROTEGES_DEFENDER = (
+    "Desktop", "Bureau", "Documents", "Pictures", "Images",
+    "Videos", "Vidéos", "Music", "Musique", "Favorites", "Favoris",
+)
+
+
+def _nom_dossier_protege(path: str) -> str | None:
+    """Nom du dossier connu protégé qui contient ``path``, sinon ``None``.
+
+    Compare ``path`` (et sa cible réelle, redirections résolues) aux dossiers
+    connus situés sous le profil utilisateur et sous les racines OneDrive.
+    """
+    candidats = {
+        os.path.normcase(os.path.abspath(path)),
+        os.path.normcase(os.path.realpath(path)),
+    }
+
+    racines = [os.path.expanduser("~")]
+    for var in ("OneDrive", "OneDriveCommercial", "OneDriveConsumer"):
+        valeur = os.environ.get(var)
+        if valeur:
+            racines.append(valeur)
+
+    for racine in racines:
+        for nom in _DOSSIERS_PROTEGES_DEFENDER:
+            connu = os.path.normcase(os.path.abspath(os.path.join(racine, nom)))
+            if any(c == connu or c.startswith(connu + os.sep) for c in candidats):
+                return nom
+    return None
+
+
+def _indice_dossier_protege(path: str) -> str:
+    """Phrase d'aide si ``path`` tombe dans un dossier protégé par Defender.
+
+    Chaîne vide sinon, pour se concaténer sans condition à un message d'erreur.
+    """
+    nom = _nom_dossier_protege(path)
+    if not nom:
+        return ""
+    return (
+        f" Ce dossier est sous « {nom} », protégé par l'Accès contrôlé aux "
+        f"dossiers de Windows Defender : un script Python ne peut pas y "
+        f"écrire. Choisissez plutôt le chemin local de la bibliothèque "
+        f"SharePoint synchronisée (hors « Documents » / « Bureau »), "
+        f"p. ex. « C:\\Users\\<vous>\\<Organisation>\\SwapAdresse - Etude "
+        f"Cible\\Analyse AGT »."
+    )
+
+
 def _ensure_dir(path: str) -> str:
     """Crée ``path`` (et ses parents) et renvoie le chemin.
 
-    ``os.makedirs`` échoue ici par un ``[WinError 2/3]`` peu parlant quand la
-    racine AUDIT_SNA configurée n'est pas un dossier local inscriptible — cas
-    fréquent d'un ``Documents`` redirigé vers OneDrive et non synchronisé sur
-    le poste, d'un lecteur réseau déconnecté, ou d'un chemin mal saisi. On
+    ``os.makedirs`` échoue ici par un ``[WinError 2/3/5]`` peu parlant quand
+    la racine AUDIT_SNA configurée n'est pas un dossier local inscriptible :
+    ``Documents`` / ``Bureau`` protégé par Windows Defender, dossier OneDrive
+    non synchronisé, lecteur réseau déconnecté, ou chemin mal saisi. On
     reformule alors en pointant le paramètre à corriger.
     """
     try:
         os.makedirs(path, exist_ok=True)
     except OSError as error:
         raise OSError(
-            f"Impossible de créer le dossier « {path} » ({error.strerror}). "
-            f"Vérifiez le paramètre « Dossier AUDIT_SNA » "
-            f"(actuellement « {_audit_sna_path()} ») : le dossier doit être "
-            f"local et inscriptible — un dossier OneDrive non synchronisé ou "
-            f"un lecteur réseau déconnecté déclenche cette erreur."
+            f"Impossible de créer le dossier « {path} » ({error.strerror})."
+            f"{_indice_dossier_protege(path)} Vérifiez le paramètre "
+            f"« Dossier AUDIT_SNA » (actuellement « {_audit_sna_path()} ») : "
+            f"il doit désigner un dossier local et inscriptible."
         ) from error
     return path
 
@@ -245,9 +302,9 @@ def verifier_racine_audit_sna() -> str:
     except OSError as error:
         raise OSError(
             f"Le dossier AUDIT_SNA « {racine} » n'est pas inscriptible "
-            f"({error.strerror}). Choisissez un dossier local dans le "
-            f"paramètre « Dossier AUDIT_SNA » (un dossier OneDrive non "
-            f"synchronisé ou un lecteur réseau déconnecté ne convient pas)."
+            f"({error.strerror}).{_indice_dossier_protege(racine)} "
+            f"Corrigez le paramètre « Dossier AUDIT_SNA » : un dossier local "
+            f"inscriptible, ou une bibliothèque SharePoint synchronisée."
         ) from error
     return racine
 
