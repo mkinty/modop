@@ -199,19 +199,68 @@ def _qgis_project_path() -> str:
 # ------ RÉPERTOIRE DÉPARTEMENT -------------------------------------------------------------
 # -------------------------------------------------------------------------------------------
 
+def _ensure_dir(path: str) -> str:
+    """Crée ``path`` (et ses parents) et renvoie le chemin.
+
+    ``os.makedirs`` échoue ici par un ``[WinError 2/3]`` peu parlant quand la
+    racine AUDIT_SNA configurée n'est pas un dossier local inscriptible — cas
+    fréquent d'un ``Documents`` redirigé vers OneDrive et non synchronisé sur
+    le poste, d'un lecteur réseau déconnecté, ou d'un chemin mal saisi. On
+    reformule alors en pointant le paramètre à corriger.
+    """
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as error:
+        raise OSError(
+            f"Impossible de créer le dossier « {path} » ({error.strerror}). "
+            f"Vérifiez le paramètre « Dossier AUDIT_SNA » "
+            f"(actuellement « {_audit_sna_path()} ») : le dossier doit être "
+            f"local et inscriptible — un dossier OneDrive non synchronisé ou "
+            f"un lecteur réseau déconnecté déclenche cette erreur."
+        ) from error
+    return path
+
+
+def verifier_racine_audit_sna() -> str:
+    """Vérifie que la racine AUDIT_SNA configurée est utilisable.
+
+    À appeler une fois avant un traitement par lot, pour échouer tout de
+    suite avec un message clair plutôt que de buter sur ``[WinError 2]`` à
+    chaque commune (voir ``_ensure_dir``). Crée la racine si elle est absente
+    mais que son parent est inscriptible.
+
+    Returns:
+        Le chemin de la racine, garanti inscriptible.
+
+    Raises:
+        OSError: racine ni créable ni inscriptible.
+    """
+    racine = _audit_sna_path()
+    _ensure_dir(racine)
+    temoin = os.path.join(racine, ".modop_write_test")
+    try:
+        with open(temoin, "w"):
+            pass
+        os.remove(temoin)
+    except OSError as error:
+        raise OSError(
+            f"Le dossier AUDIT_SNA « {racine} » n'est pas inscriptible "
+            f"({error.strerror}). Choisissez un dossier local dans le "
+            f"paramètre « Dossier AUDIT_SNA » (un dossier OneDrive non "
+            f"synchronisé ou un lecteur réseau déconnecté ne convient pas)."
+        ) from error
+    return racine
+
+
 def _department_path(insee: str) -> str:
-    """Chemin du dossier du département concerné par le code insee, si le dossier n'existe pas, en créer."""
+    """Chemin du dossier du département de la commune ``insee``, créé au besoin."""
     dep_code = str(insee).strip()[:2]
-    dep_path = os.path.join(_audit_sna_path(), f"Dep{dep_code}")
-    os.makedirs(dep_path, exist_ok=True)
-    return dep_path
+    return _ensure_dir(os.path.join(_audit_sna_path(), f"Dep{dep_code}"))
 
 
 def _insee_dep_path(insee: str) -> str:
-    """Chemin de la commune concerné par le code insee"""
-    insee_path = os.path.join(_department_path(insee), str(insee))
-    os.makedirs(insee_path, exist_ok=True)
-    return insee_path
+    """Chemin du dossier de la commune ``insee``, créé au besoin."""
+    return _ensure_dir(os.path.join(_department_path(insee), str(insee)))
 
 def _excel_destination_file_path(insee: str) -> str:
     """Chemin du fichier excel audit de la commune (préparations des livrables"""
@@ -219,16 +268,12 @@ def _excel_destination_file_path(insee: str) -> str:
 
 def _insee_carte_path(insee: str) -> str:
     """Chemin du dossier Carte de la commune concernée par le code insee"""
-    carte_path = os.path.join(_insee_dep_path(insee), "Carte")
-    os.makedirs(carte_path, exist_ok=True)
-    return carte_path
+    return _ensure_dir(os.path.join(_insee_dep_path(insee), "Carte"))
 
 
 def _insee_analyse_path(insee: str) -> str:
     """Chemin du dossier Analyse de la commune concernée par le code insee"""
-    analysis_path = os.path.join(_insee_dep_path(insee), "Analyse")
-    os.makedirs(analysis_path, exist_ok=True)
-    return analysis_path
+    return _ensure_dir(os.path.join(_insee_dep_path(insee), "Analyse"))
 
 def _insee_ppt_sharepoint_base_url(insee: str) -> str:
     """URL SharePoint du dossier Analyse de la commune (base des liens PPT).

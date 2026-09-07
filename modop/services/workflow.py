@@ -37,6 +37,7 @@ from modop.path_manager import (
     _qgis_project_path,
     _qgis_saved_project_path,
     _workspace_path,
+    verifier_racine_audit_sna,
 )
 from modop.services.analyse import (
     PptTemplateError,
@@ -370,9 +371,15 @@ def prepare_lot_deliverables(
         if verbose:
             print(message)
 
-    # Erreur de configuration, pas une anomalie de commune : verifiee une
-    # bonne fois pour toutes avant de commencer, plutot que de la decouvrir
-    # au milieu du lot sur la premiere commune traitee.
+    # Erreurs de configuration, pas des anomalies de commune : verifiees une
+    # bonne fois pour toutes avant de commencer, plutot que de les decouvrir
+    # au milieu du lot, a l'identique, sur chaque commune.
+    try:
+        verifier_racine_audit_sna()
+    except OSError as error:
+        log(f"[config] ❌ {error}")
+        raise
+
     if generate_ppts:
         try:
             valider_template_ppt(pptx_template_path)

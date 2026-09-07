@@ -1,0 +1,16 @@
+# Fins de ligne normalisées : LF dans le dépôt pour tous les fichiers texte,
+# quel que soit le core.autocrlf de chaque poste. Supprime le warning
+# « LF will be replaced by CRLF » au commit sous Windows.
+* text=auto eol=lf
+
+# Fichiers binaires : jamais de conversion de fins de ligne.
+*.xlsx binary
+*.xls binary
+*.pptx binary
+*.ppt binary
+*.zip binary
+*.qgz binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
