@@ -12,8 +12,9 @@ détectée. C'est ``services.workflow`` qui porte cette distinction : voir
 ``prepare_lot_deliverables``, qui valide le template une fois, avant même de
 commencer la première commune. Le template étant valide, pour chaque ligne du
 fichier Excel trié identifiée par la colonne ``ID erreur`` : la colonne
-``Lien vers le .ppt`` est complétée avec le chemin du PPT correspondant dans
-le sous-dossier ``Analyse`` de la commune, et le PPT est généré.
+``Lien vers le .ppt`` est complétée avec le lien SharePoint du PPT
+correspondant (``build_ppt_sharepoint_link`` — ouverture navigateur), et le
+PPT est généré localement dans le sous-dossier ``Analyse`` de la commune.
 
 Le nommage des fichiers et le mécanisme de génération sont repris du
 programme BPA (``services/ppt.py`` et la fonction ``faire_ppt()`` de
@@ -28,11 +29,12 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from urllib.parse import quote
 
 from openpyxl import load_workbook
 
 from modop.constants import COL_ID_ERR, COL_LINK, PPT_NAME_TEMPLATE
-from modop.path_manager import _insee_analyse_path
+from modop.path_manager import _insee_analyse_path, _insee_ppt_sharepoint_base_url
 from modop.services.excel import HEADER_SCAN_ROWS, _normalize_header
 from modop.services.ppt import generate_ppt
 
@@ -85,6 +87,17 @@ def valider_template_ppt(pptx_template_path: str | None) -> None:
 def build_ppt_link(insee: str, id_err: str) -> str:
     """Chemin du PPT d'une ligne, dans le dossier Analyse de la commune."""
     return os.path.join(_insee_analyse_path(insee), ppt_name_for(id_err))
+
+def build_ppt_sharepoint_link(insee: str, id_err: str) -> str:
+    """Lien SharePoint du PPT d'une ligne (colonne « Lien vers le .ppt »).
+
+    Contrairement à ``build_ppt_link`` qui renvoie le chemin local du fichier
+    réellement généré, ce lien pointe vers la copie SharePoint et s'ouvre
+    dans le navigateur (``?web=1``). C'est une URL : query string attachée
+    avec ``?``, segment de nom de fichier encodé.
+    """
+    base = _insee_ppt_sharepoint_base_url(insee)
+    return f"{base}/{quote(ppt_name_for(id_err))}?web=1"
 
 
 def _find_id_and_link_columns(worksheet) -> tuple[int | None, dict[str, int]]:
@@ -215,8 +228,12 @@ def generer_ppts_commune(
                 continue
 
             result.total += 1
-            dst = build_ppt_link(insee, id_err)
-            worksheet.cell(row_index, col_link).value = dst
+            dst = build_ppt_link(insee, id_err)  # chemin local, pour generate_ppt
+            # La cellule reçoit le lien SharePoint (ouverture navigateur), pas
+            # le chemin local : c'est ce que l'utilisateur clique dans l'audit.
+            worksheet.cell(row_index, col_link).value = build_ppt_sharepoint_link(
+                insee, id_err
+            )
             result.liens_completes += 1
 
             row_data = {

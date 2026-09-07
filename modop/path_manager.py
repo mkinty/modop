@@ -9,6 +9,9 @@ Gère deux modes :
 
 import os
 import sys
+from urllib.parse import quote
+
+from .constants import PPT_SHAREPOINT_BASE_URL
 
 APP_NAME = "MODOP"
 
@@ -227,6 +230,18 @@ def _insee_analyse_path(insee: str) -> str:
     os.makedirs(analysis_path, exist_ok=True)
     return analysis_path
 
+def _insee_ppt_sharepoint_base_url(insee: str) -> str:
+    """URL SharePoint du dossier Analyse de la commune (base des liens PPT).
+
+    Reprend la même arborescence que ``_insee_analyse_path``
+    (``Dep<xx>/<insee>/Analyse``), mais sous forme d'URL : segments joints par
+    ``/`` et encodés (``quote``). Ne pas utiliser ``os.path.join`` ici — sur
+    Windows il produirait des ``\\`` et casserait le lien.
+    """
+    insee = str(insee).strip()
+    dep_code = insee[:2]
+    segments = (f"Dep{dep_code}", insee, "Analyse")
+    return "/".join([PPT_SHAREPOINT_BASE_URL.rstrip("/"), *(quote(s) for s in segments)])
 
 # -----------------------------------------------------------------------
 # ------ LIVRABLE QGIS --------------------------------------------------

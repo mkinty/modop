@@ -12,10 +12,12 @@ import zipfile
 import pytest
 from openpyxl import Workbook, load_workbook
 
+from modop.constants import PPT_SHAREPOINT_BASE_URL
 from modop.path_manager import _insee_analyse_path
 from modop.services.analyse import (
     PptTemplateError,
     build_ppt_link,
+    build_ppt_sharepoint_link,
     generer_ppts_commune,
     ppt_name_for,
     valider_template_ppt,
@@ -156,9 +158,14 @@ def test_ppt_genere_si_case_cochee(tmp_path, bureau):
 
     worksheet = load_workbook(excel).active
     lien = worksheet.cell(2, 4).value
-    assert os.path.isfile(lien)
-    assert os.path.basename(lien) == ppt_name_for("E1")
-    assert os.path.dirname(lien) == _insee_analyse_path("45001")
+    # La cellule porte le lien SharePoint (ouverture navigateur), pas le
+    # chemin local ; le fichier réellement généré se vérifie via
+    # build_ppt_link.
+    assert lien == build_ppt_sharepoint_link("45001", "E1")
+    assert lien.startswith(PPT_SHAREPOINT_BASE_URL + "/")
+    assert lien.endswith("/" + ppt_name_for("E1") + "?web=1")
+    assert "\\" not in lien
+    assert os.path.isfile(build_ppt_link("45001", "E1"))
 
 
 def test_plusieurs_lignes_generation_parallele(tmp_path, bureau):
