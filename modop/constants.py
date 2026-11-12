@@ -45,3 +45,32 @@ VARIABLES = {
     "IPE nb log adresse": "IPE nb log adresse",
     "Street View IA": "Street View IA",
 }
+
+# -----------------------------------------------------------------------
+# ------ REFERENTIELS : BAN ET PARCELLES CADASTRALES ---------------------
+# -----------------------------------------------------------------------
+# Extraits figes, telecharges commune par commune au moment du traitement et
+# embarques dans le livrable : l'archive reste lisible hors ligne et montre
+# l'etat des referentiels a la date de l'audit.
+
+# Adresses BAN d'une commune, au format BAL (une ligne par position).
+# Coordonnees x / y deja en Lambert 93.
+BAN_URL_TEMPLATE = (
+    "https://plateforme.adresse.data.gouv.fr/ban/communes/{insee}"
+    "/download/csv-bal/adresses"
+)
+
+# Parcelles cadastrales Etalab d'une commune (GeoJSON compresse, WGS84).
+PARCELLES_URL_TEMPLATE = (
+    "https://cadastre.data.gouv.fr/data/etalab-cadastre/latest/geojson/communes"
+    "/{dep}/{insee}/cadastre-{insee}-parcelles.json.gz"
+)
+
+# Noms des couches dans le projet QGIS. Si le projet modele contient deja
+# une couche de ce nom, elle est conservee avec son style ; sinon elle est
+# ajoutee avec un style par defaut.
+BAN_LAYER_NAME = "carto BAN"
+PARCELLES_LAYER_NAME = "carto parcelles"
+
+# Delai maximal d'un telechargement, en secondes.
+REFERENTIELS_TIMEOUT = 60

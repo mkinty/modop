@@ -6,8 +6,10 @@ Enchaine les huit etapes du mode operatoire :
     2. trier le fichier Excel d'audit et le deposer dans le dossier commune ;
     3. completer la colonne "Lien vers le .ppt" de l'audit et, si demande,
        generer les PPT vierges correspondants dans le dossier Analyse ;
-    4. copier les fichiers QGIS de la commune vers le repertoire de travail ;
-    5. ouvrir le projet QGIS modele ;
+    4. copier les fichiers QGIS de la commune vers le repertoire de travail,
+       puis, si demande, y ajouter les extraits BAN et parcelles telecharges ;
+    5. ouvrir le projet QGIS modele (et y declarer les couches BAN et
+       parcelles s'il ne les contient pas) ;
     6. controler les couches, puis centrer la carte sur la commune ;
     7. enregistrer le projet au nom de la commune ;
     8. compresser les .csv et le projet, et deposer l'archive dans Carte.
@@ -17,6 +19,11 @@ et rapporter.
 
 Le fichier Excel n'entre pas dans l'archive : il est livre a part, dans le
 dossier de la commune, ou excel.py le depose.
+
+Mode "Carte seule" (`carte_only`) : seules les etapes 4 a 8 sont executees.
+L'audit trie, les PPT et le dossier Analyse deja produits ne sont pas
+touches. Sert a regenerer le projet QGIS et l'archive d'une commune, par
+exemple pour y ajouter les couches BAN et parcelles.
 
 Deux points d'entree :
     prepare_commune_deliverable(lot, insee)    une commune
@@ -48,6 +55,7 @@ from modop.services.archive import build_deliverable_archive
 from modop.services.excel import format_excel_file
 from modop.services.files import copy_commune_files, list_communes, purge_workspace
 from modop.services.qgis_project import QgisProject
+from modop.services.referentiels import fetch_referentiels, renderer_element
 
 
 @dataclass
@@ -60,6 +68,8 @@ class DeliverableResult:
     excel_file: str = ""
     ppt_liens: int = 0
     ppt_generes: int = 0
+    adresses_ban: int = 0
+    parcelles: int = 0
     copied_files: list[str] = field(default_factory=list)
     project_file: str = ""
     archive_file: str = ""
@@ -187,6 +197,8 @@ def prepare_commune_deliverable(
     strict: bool = False,
     pptx_template_path: str | None = None,
     generate_ppts: bool = False,
+    add_referentiels: bool = False,
+    carte_only: bool = False,
     verbose: bool = True,
 ) -> DeliverableResult:
     """Produit le livrable complet d'une commune : audit trie et archive QGIS.
@@ -208,6 +220,12 @@ def prepare_commune_deliverable(
         generate_ppts: correspond a la case a cocher de l'interface. Vide par
             defaut : les PPT ne sont generes que si elle est cochee. La
             colonne "Lien vers le .ppt" est completee dans tous les cas.
+        add_referentiels: telecharge les extraits BAN et parcelles de la
+            commune et les ajoute au projet. Necessite un acces internet ;
+            un referentiel indisponible n'est qu'un avertissement.
+        carte_only: ne produit que le dossier Carte (projet QGIS et
+            archive). L'audit, les PPT et le dossier Analyse ne sont pas
+            touches : `sort_excel` et `generate_ppts` sont ignores.
         verbose: affiche la progression.
 
     Returns:
@@ -234,8 +252,13 @@ def prepare_commune_deliverable(
     # Les deux fonctions creent le dossier au passage. Analyse reste vide a
     # ce stade : elle accueille les pieces produites hors de ce traitement.
     result.carte_dir = _insee_carte_path(insee)
-    result.analysis_dir = _insee_analyse_path(insee)
-    log(f"[dossier] commune {insee} : Carte et Analyse prêts")
+    if carte_only:
+        log(f"[dossier] commune {insee} : Carte prêt (carte seule : audit, "
+            f"PPT et Analyse inchangés)")
+        sort_excel = generate_ppts = False
+    else:
+        result.analysis_dir = _insee_analyse_path(insee)
+        log(f"[dossier] commune {insee} : Carte et Analyse prêts")
 
     # -- 2. Fichier d'audit -------------------------------------------------
     if sort_excel:
@@ -275,10 +298,28 @@ def prepare_commune_deliverable(
 
     result.copied_files = copy_commune_files(lot_name, insee, verbose=verbose)
 
+    # Extraits BAN et parcelles, ecrits a cote des autres .csv : la purge les
+    # retire avant la commune suivante, l'archive les embarque.
+    referentiels = None
+    if add_referentiels:
+        referentiels = fetch_referentiels(insee, verbose=verbose)
+        result.adresses_ban = referentiels.adresses
+        result.parcelles = referentiels.parcelles
+        result.warnings.extend(referentiels.warnings)
+        stop_if_strict()
+
     # -- 5. Ouverture du projet -------------------------------------------
     project = QgisProject.open(source_project)
     log(f"[qgis] projet ouvert : {os.path.basename(source_project)} "
         f"({len(project.layers)} couche(s))")
+
+    # Seules les couches effectivement produites sont declarees : une couche
+    # sans fichier serait signalee "source introuvable" a l'ouverture.
+    if referentiels is not None:
+        for spec in referentiels.layers:
+            if project.add_vector_layer(spec.name, spec.datasource, "delimitedtext",
+                                        spec.geometry, renderer_element(spec)):
+                log(f"[qgis] couche ajoutee : '{spec.name}'")
 
     # -- 6. Controles et centrage ------------------------------------------
     # Le projet est ouvert depuis le workspace : les sources relatives
@@ -324,6 +365,8 @@ def prepare_lot_deliverables(
     stop_on_error: bool = False,
     pptx_template_path: str | None = None,
     generate_ppts: bool = False,
+    add_referentiels: bool = False,
+    carte_only: bool = False,
     on_start: Callable[[int, int, str], None] | None = None,
     on_result: Callable[[str, "DeliverableResult | None", str], None] | None = None,
     verbose: bool = True,
@@ -348,6 +391,10 @@ def prepare_lot_deliverables(
             les communes.
         generate_ppts: correspond a la case a cocher de l'interface. Vide par
             defaut : les PPT ne sont generes que si elle est cochee.
+        add_referentiels: ajoute les extraits BAN et parcelles de chaque
+            commune (voir `prepare_commune_deliverable`).
+        carte_only: ne regenere que le dossier Carte de chaque commune (voir
+            `prepare_commune_deliverable`).
         on_start: appele avant chaque commune, avec (position, total, insee).
             Permet a une interface de suivre l'avancement.
         on_result: appele apres chaque commune, avec (insee, resultat, erreur).
@@ -380,7 +427,9 @@ def prepare_lot_deliverables(
         log(f"[config] ❌ {error}")
         raise
 
-    if generate_ppts:
+    # En mode carte seule, aucun PPT n'est produit : le template n'est pas
+    # exige.
+    if generate_ppts and not carte_only:
         try:
             valider_template_ppt(pptx_template_path)
         except PptTemplateError as error:
@@ -417,6 +466,8 @@ def prepare_lot_deliverables(
                 strict=strict,
                 pptx_template_path=pptx_template_path,
                 generate_ppts=generate_ppts,
+                add_referentiels=add_referentiels,
+                carte_only=carte_only,
                 verbose=verbose,
             )
             result.results[insee] = commune
@@ -478,6 +529,8 @@ if __name__ == "__main__":
         LOT, codes,
         pptx_template_path=_config.get("pptx_template_path") or None,
         generate_ppts=_config.get("generate_ppts", False),
+        add_referentiels=_config.get("add_referentiels", False),
+        carte_only=_config.get("carte_only", False),
     )
 
     print()

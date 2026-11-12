@@ -25,6 +25,7 @@ C_RED = "#ff6b7a"         # erreur
 C_PURPLE = "#b58cf0"      # etape QGIS
 C_CYAN = "#4fe0d0"        # etape archive
 C_PINK = "#ff8fb3"        # etape PPT
+C_LIME = "#b5e35a"        # etape referentiels (BAN, parcelles)
 
 # ── Page journal ──────────────────────────────────────────────────
 C_LOG_BG = "#05080f"      # fond du journal
@@ -46,6 +47,7 @@ PHASES = [
     ("ppt", "PPT", C_PINK),
     ("purge", "Purge", C_MUTED),
     ("copie", "Copie", C_GREEN),
+    ("ref", "BAN · Parcelles", C_LIME),
     ("qgis", "QGIS", C_PURPLE),
     ("zip", "Archive", C_CYAN),
 ]
@@ -57,6 +59,7 @@ LOG_COLORS = {
     "[ppt]": C_PINK,
     "[purge]": C_MUTED,
     "[copie]": C_GREEN,
+    "[ref]": C_LIME,
     "[qgis]": C_PURPLE,
     "[zip]": C_CYAN,
     "[ok]": C_GREEN,

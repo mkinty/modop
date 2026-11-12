@@ -124,6 +124,38 @@ les exports Excel français n'étant pas en UTF-8.
 Limite assumée : **aucune reprojection**. Une couche dans un CRS différent de
 celui du projet produirait une emprise dans son propre système.
 
+### `services/referentiels.py`
+
+Télécharge, pour une commune, l'extrait BAN (format BAL) et les parcelles
+Etalab, et les écrit en CSV dans le répertoire de travail. Les deux services
+publient **un fichier par commune** : rien de départemental à télécharger puis
+filtrer.
+
+Le choix du CSV, y compris pour les parcelles publiées en GeoJSON, est
+délibéré : toutes les couches du projet restent en `delimitedtext`, l'archive
+les embarque sans changement (elle ne retient que les `.csv`), et
+`qgis_datasource` sait en calculer l'emprise.
+
+**Les parcelles sont reprojetées en Lambert 93.** Etalab les publie en WGS84.
+Laissées en degrés, elles fausseraient tout calcul d'emprise, que
+`qgis_datasource` fait sans reprojection. La conique conforme de Lambert a des
+formules fermées : `to_lambert93()` les implémente directement, sans pyproj.
+Elle est vérifiée contre la BAN elle-même, qui publie lon/lat **et** x/y pour
+chaque adresse (écart < 0,5 m, dû à l'arrondi des degrés). Sur le lot
+d'exemple, 96 % des positions « bâtiment » tombent dans la parcelle que leur
+attribue la BAN.
+
+Un service indisponible ne fait pas échouer la commune : `ReferentielError`
+est convertie en avertissement, et seules les couches effectivement produites
+sont déclarées au projet (une couche sans fichier serait signalée « source
+introuvable »).
+
+`QgisProject.add_vector_layer()` déclare une couche absente aux trois
+endroits que lit QGIS : `<projectlayers>`, `<layer-tree-group>` (devant le
+premier fond de plan) et l'ancienne `<legend>`. Une couche du même nom déjà
+présente dans le modèle n'est jamais modifiée : c'est ce qui permet de lui
+donner un style définitif dans QGIS.
+
 ### `services/archive.py`
 
 Constitue le ZIP à plat — les fichiers homonymes provoquent une erreur explicite

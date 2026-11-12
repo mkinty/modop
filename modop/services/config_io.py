@@ -36,6 +36,10 @@ DEFAULT_CONFIG = {
     # Case "Générer les PPT" : vide par défaut, les PPT ne sont générés que
     # si l'utilisateur la coche explicitement.
     "generate_ppts": False,
+    # Case "BAN et parcelles" : telecharge les extraits de chaque commune.
+    "add_referentiels": True,
+    # Case "Carte seule" : ne regenere que le projet QGIS et l'archive.
+    "carte_only": False,
 }
 
 

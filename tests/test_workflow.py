@@ -431,3 +431,44 @@ def test_journal_signale_l_etape_ppt(commune_files, excel_source_ppt, pptx_templ
 def test_journal_muet_sur_ppt_si_case_decochee(commune_files, excel_source_ppt, capsys):
     prepare_commune_deliverable(LOT, INSEE, verbose=True)
     assert "[ppt]" not in capsys.readouterr().out
+
+# -- Mode "Carte seule" ---------------------------------------------------------
+
+
+def test_carte_seule_ne_touche_ni_audit_ni_analyse(commune_files, excel_source):
+    """Seuls le projet QGIS et l'archive sont produits."""
+    from modop.path_manager import _excel_destination_file_path
+
+    resultat = prepare_commune_deliverable(
+        LOT, INSEE, carte_only=True, generate_ppts=True, pptx_template_path=None,
+        verbose=False,
+    )
+
+    assert resultat.ok
+    assert resultat.excel_file == "" and resultat.analysis_dir == ""
+    assert resultat.ppt_liens == 0
+    commune_dir = os.path.dirname(resultat.carte_dir)
+    assert not os.path.exists(os.path.join(commune_dir, "Analyse"))
+    assert not os.path.exists(_excel_destination_file_path(INSEE))
+
+
+def test_carte_seule_preserve_l_audit_deja_trie(commune_files, excel_source):
+    """Un audit deja livre n'est ni retrie ni reecrit."""
+    premier = prepare_commune_deliverable(LOT, INSEE, verbose=False)
+    date_audit = os.path.getmtime(premier.excel_file)
+
+    second = prepare_commune_deliverable(LOT, INSEE, carte_only=True, verbose=False)
+
+    assert second.ok
+    assert os.path.getmtime(premier.excel_file) == date_audit
+
+
+def test_lot_carte_seule_n_exige_pas_le_template(lot_communes):
+    """Case PPT restee cochee : sans effet en mode carte seule."""
+    from modop.services.workflow import prepare_lot_deliverables
+
+    bilan = prepare_lot_deliverables(
+        LOT, lot_communes["codes"], carte_only=True, generate_ppts=True,
+        pptx_template_path=None, verbose=False,
+    )
+    assert bilan.ok

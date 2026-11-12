@@ -1,14 +1,16 @@
 {
-  "audit_sna_path": "",
-  "deliverable_path": "C:\\Users\\nmasl\\Desktop\\AUDIT_SNA\\LIVRABLE",
-  "workspace_path": "",
+  "audit_sna_path": "C:\\Users\\nmasl\\Desktop\\audit_SNA",
+  "deliverable_path": "C:\\Users\\nmasl\\Desktop\\audit_SNA\\préparation livrable",
+  "workspace_path": "C:\\Users\\nmasl\\Desktop\\work_space",
   "pptx_template_path": "C:\\Users\\nmasl\\Documents\\templates\\pptx_template_vierge.pptx",
-  "lot_name": "Lot7",
-  "insee_codes": "45001, 45002",
+  "lot_name": "Lot1",
+  "insee_codes": "73001, 73005, 73007, 73012, 73013, 73018, 73019, 73021, 73022, 73025, 73027, 73033, 73036, 73039, 73042, 73053, 73058, 73067, 73068, 73069, 73070, 73072, 73073, 73074, 73075, 73078, 73081, 73083, 73084, 73085, 73089, 73090, 73095, 73096, 73099, 73101, 73104, 73105, 73106, 73107, 73109, 73120, 73122, 73129, 73133, 73135, 73138, 73140, 73141, 73145, 73146, 73147, 73149, 73151, 73152, 73166, 73171, 73173, 73177, 73178, 73180, 73183, 73184, 73189, 73192, 73204, 73205, 73207, 73214, 73217, 73218, 73220, 73221, 73224, 73229, 73230, 73231, 73233, 73234, 73236, 73237, 73240, 73242, 73245, 73246, 73247, 73250, 73252, 73254, 73255, 73256, 73258, 73259, 73265, 73267, 73269, 73271, 73272, 73273, 73274, 73275, 73276, 73277, 73278, 73280, 73282, 73286, 73289, 73299, 73302, 73307, 73309, 73311, 73313, 73314, 73315, 73316, 73320, 73327, 73330",
   "zoom_layer": "",
   "sort_excel": true,
   "clean_workspace": true,
   "strict": false,
   "stop_on_error": false,
-  "generate_ppts": true
+  "generate_ppts": false,
+  "add_referentiels": true,
+  "carte_only": true
 }

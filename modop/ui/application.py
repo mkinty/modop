@@ -527,20 +527,38 @@ class App(tk.Tk):
         # Vide par défaut : les PPT ne sont générés que si l'utilisateur
         # coche explicitement la case.
         self.var_generate_ppts = tk.BooleanVar(value=False)
+        # Extraits BAN et parcelles telecharges pour chaque commune.
+        self.var_referentiels = tk.BooleanVar(value=True)
+        # Carte seule : ne regenere que le projet QGIS et l'archive. Les
+        # cases de l'audit et des PPT sont alors grisees.
+        self.var_carte_only = tk.BooleanVar(value=False)
+        self._option_buttons: dict[str, tk.Checkbutton] = {}
 
-        for variable, label in (
-            (self.var_sort_excel, "Trier l'audit"),
-            (self.var_clean, "Purger le répertoire"),
-            (self.var_strict, "Mode strict"),
-            (self.var_stop, "Arrêter au 1er échec"),
-            (self.var_generate_ppts, "Générer les PPT"),
+        for key, variable, label in (
+            ("carte_only", self.var_carte_only, "Carte seule (QGIS)"),
+            ("sort_excel", self.var_sort_excel, "Trier l'audit"),
+            ("clean", self.var_clean, "Purger le répertoire"),
+            ("strict", self.var_strict, "Mode strict"),
+            ("stop", self.var_stop, "Arrêter au 1er échec"),
+            ("generate_ppts", self.var_generate_ppts, "Générer les PPT"),
+            ("referentiels", self.var_referentiels, "BAN et parcelles"),
         ):
-            tk.Checkbutton(
+            button = tk.Checkbutton(
                 options, text=label, variable=variable, bg=C_CARD, fg=C_TEXT2,
                 font=(F_BODY, 10), selectcolor=C_PANEL2, activebackground=C_CARD,
                 activeforeground=C_TEXT, relief="flat", cursor="hand2",
-                highlightthickness=0, anchor="w",
-            ).pack(side="left", padx=(0, 22))
+                highlightthickness=0, anchor="w", disabledforeground=C_MUTED,
+            )
+            button.pack(side="left", padx=(0, 22))
+            self._option_buttons[key] = button
+
+        self.var_carte_only.trace_add("write", lambda *_: self._refresh_carte_only())
+
+    def _refresh_carte_only(self) -> None:
+        """Grise les options sans effet en mode carte seule."""
+        state = "disabled" if self.var_carte_only.get() else "normal"
+        for key in ("sort_excel", "generate_ppts"):
+            self._option_buttons[key].configure(state=state)
 
     def _clear_insee(self) -> None:
         self.txt_insee.delete("1.0", "end")
@@ -648,6 +666,8 @@ class App(tk.Tk):
         self.var_strict.set(self.config_data["strict"])
         self.var_stop.set(self.config_data["stop_on_error"])
         self.var_generate_ppts.set(self.config_data["generate_ppts"])
+        self.var_referentiels.set(self.config_data["add_referentiels"])
+        self.var_carte_only.set(self.config_data["carte_only"])
 
     def _collect_config(self) -> dict:
         """Etat courant de la saisie."""
@@ -664,6 +684,8 @@ class App(tk.Tk):
             "strict": self.var_strict.get(),
             "stop_on_error": self.var_stop.get(),
             "generate_ppts": self.var_generate_ppts.get(),
+            "add_referentiels": self.var_referentiels.get(),
+            "carte_only": self.var_carte_only.get(),
         }
 
     def _on_close(self) -> None:
@@ -747,6 +769,8 @@ class App(tk.Tk):
             "stop_on_error": self.var_stop.get(),
             "pptx_template_path": self.ent_pptx_template.get().strip() or None,
             "generate_ppts": self.var_generate_ppts.get(),
+            "add_referentiels": self.var_referentiels.get(),
+            "carte_only": self.var_carte_only.get(),
         }
         self._last_message_at = time.time()
         self._watchdog_fired = False

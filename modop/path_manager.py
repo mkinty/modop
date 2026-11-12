@@ -11,7 +11,7 @@ import os
 import sys
 from urllib.parse import quote
 
-from .constants import PPT_SHAREPOINT_BASE_URL
+from .constants import BAN_LAYER_NAME, PARCELLES_LAYER_NAME, PPT_SHAREPOINT_BASE_URL
 
 APP_NAME = "MODOP"
 
@@ -295,6 +295,20 @@ def _insee_ppt_sharepoint_base_url(insee: str) -> str:
 def _qgis_saved_project_path(insee: str) -> str:
     """Chemin du projet QGIS enregistre au nom de la commune."""
     return os.path.join(_workspace_path(), f"carte_audit {insee}.qgz")
+
+
+def _ban_csv_path() -> str:
+    """Extrait BAN de la commune en cours, dans le repertoire de travail.
+
+    Le nom suit celui de la couche du projet : la source relative
+    ``./carto BAN.csv`` le retrouve, et l'archive l'embarque comme tout .csv.
+    """
+    return os.path.join(_workspace_path(), f"{BAN_LAYER_NAME}.csv")
+
+
+def _parcelles_csv_path() -> str:
+    """Extrait des parcelles de la commune en cours, dans le repertoire de travail."""
+    return os.path.join(_workspace_path(), f"{PARCELLES_LAYER_NAME}.csv")
 
 
 def _deliverable_archive_path(insee: str) -> str:

@@ -6,6 +6,7 @@ requise, et le code reste testable hors environnement PyQGIS.
 
 Operations couvertes :
   - lister les couches et verifier que leurs sources existent ;
+  - ajouter une couche vectorielle absente du modele (BAN, parcelles) ;
   - centrer la carte sur l'emprise d'une couche (zoom) ;
   - enregistrer le projet sous un nouveau nom.
 
@@ -15,7 +16,10 @@ restaure a l'ouverture. Il n'y a pas de rendu graphique.
 
 from __future__ import annotations
 
+import copy
 import os
+import re
+import uuid
 import zipfile
 from dataclasses import dataclass
 from xml.etree import ElementTree
@@ -24,6 +28,9 @@ from modop.services.qgis_datasource import compute_bounds, parse_datasource
 
 # Providers dont la source designe un fichier sur le disque.
 _FILE_PROVIDERS = frozenset({"ogr", "gdal", "delimitedtext", "spatialite", "gpx"})
+
+# Providers des fonds de plan : les couches ajoutees se placent au-dessus.
+_BASEMAP_PROVIDERS = frozenset({"wms", "xyz", "arcgismapserver", "wcs", "vectortile"})
 
 
 @dataclass(frozen=True)
@@ -353,6 +360,136 @@ class QgisProject:
 
         element.text = title
         self._root.set("projectname", title)
+
+    def has_layer(self, name: str) -> bool:
+        """Vrai si une couche porte exactement ce nom (casse ignoree).
+
+        Contrairement a `find_layer`, aucune correspondance partielle : la
+        couche "carto BAN" ne doit pas etre confondue avec une autre qui en
+        contiendrait le nom.
+        """
+        target = name.strip().lower()
+        return any(layer.name.strip().lower() == target for layer in self.layers)
+
+    def add_vector_layer(self, name: str, datasource: str, provider: str,
+                         geometry: str, renderer: ElementTree.Element,
+                         crs_authid: str = "EPSG:2154") -> str:
+        """Ajoute une couche vectorielle au projet, si elle n'y est pas deja.
+
+        Une couche de meme nom presente dans le projet modele est conservee
+        telle quelle, avec le style que l'utilisateur lui a donne : rien
+        n'est ajoute.
+
+        La couche est declaree aux trois endroits que lit QGIS : la liste des
+        couches (<projectlayers>), l'arbre des couches (<layer-tree-group>),
+        juste au-dessus des fonds de plan pour rester visible, et l'ancienne
+        legende (<legend>) quand le projet en porte une.
+
+        Args:
+            name: nom affiche de la couche.
+            datasource: URI de source, relative au projet.
+            provider: fournisseur QGIS (ex. "delimitedtext").
+            geometry: "Point", "Line" ou "Polygon".
+            renderer: element <renderer-v2> definissant le style.
+            crs_authid: systeme de coordonnees des donnees.
+
+        Returns:
+            L'identifiant de la couche ajoutee, ou chaine vide si elle
+            existait deja.
+        """
+        if self.has_layer(name):
+            return ""
+
+        layer_id = re.sub(r"\W", "_", name) + "_" + str(uuid.uuid4()).replace("-", "_")
+        wkb_type = {"Point": "Point", "Line": "MultiLineString",
+                    "Polygon": "MultiPolygon"}.get(geometry, geometry)
+
+        # -- <maplayer> --
+        projectlayers = self._root.find("projectlayers")
+        if projectlayers is None:
+            projectlayers = ElementTree.SubElement(self._root, "projectlayers")
+
+        maplayer = ElementTree.SubElement(projectlayers, "maplayer", {
+            "type": "vector", "geometry": geometry, "wkbType": wkb_type,
+            "hasScaleBasedVisibilityFlag": "0", "minScale": "100000000",
+            "maxScale": "0", "readOnly": "0", "labelsEnabled": "0",
+            "styleCategories": "AllStyleCategories", "autoRefreshMode": "Disabled",
+            "autoRefreshTime": "0", "refreshOnNotifyEnabled": "0",
+            "refreshOnNotifyMessage": "", "legendPlaceholderImage": "",
+            "simplifyDrawingHints": "1", "simplifyAlgorithm": "0",
+            "simplifyDrawingTol": "1", "simplifyLocal": "1",
+            "simplifyMaxScale": "1", "symbologyReferenceScale": "-1",
+        })
+        ElementTree.SubElement(maplayer, "id").text = layer_id
+        ElementTree.SubElement(maplayer, "datasource").text = datasource
+        ElementTree.SubElement(maplayer, "layername").text = name
+
+        srs = ElementTree.SubElement(maplayer, "srs")
+        project_srs = self._root.find("./projectCrs/spatialrefsys")
+        if project_srs is not None and (project_srs.findtext("authid") or "") == crs_authid:
+            srs.append(copy.deepcopy(project_srs))
+        else:
+            spatialrefsys = ElementTree.SubElement(srs, "spatialrefsys")
+            ElementTree.SubElement(spatialrefsys, "authid").text = crs_authid
+
+        ElementTree.SubElement(maplayer, "provider", {"encoding": "UTF-8"}).text = provider
+        maplayer.append(renderer)
+        ElementTree.SubElement(maplayer, "blendMode").text = "0"
+        ElementTree.SubElement(maplayer, "featureBlendMode").text = "0"
+        ElementTree.SubElement(maplayer, "layerOpacity").text = "1"
+        ElementTree.SubElement(maplayer, "legend", {"type": "default-vector",
+                                                    "showLabelLegend": "0"})
+
+        # -- <layer-tree-group> --
+        tree = self._root.find("layer-tree-group")
+        if tree is None:
+            tree = ElementTree.SubElement(self._root, "layer-tree-group")
+        node = ElementTree.Element("layer-tree-layer", {
+            "id": layer_id, "name": name, "source": datasource,
+            "providerKey": provider, "checked": "Qt::Checked", "expanded": "1",
+            "legend_exp": "", "legend_split_behavior": "0", "patch_size": "-1,-1",
+        })
+        ElementTree.SubElement(ElementTree.SubElement(node, "customproperties"), "Option")
+        tree.insert(self._basemap_index(tree, "layer-tree-layer",
+                                        lambda e: e.get("providerKey", "")), node)
+
+        custom_order = tree.find("custom-order")
+        if custom_order is not None:
+            ElementTree.SubElement(custom_order, "item").text = layer_id
+
+        # -- <legend> (format historique, encore ecrit par QGIS 3) --
+        legend = self._root.find("legend")
+        if legend is not None:
+            legendlayer = ElementTree.Element("legendlayer", {
+                "name": name, "open": "true", "checked": "Qt::Checked",
+                "drawingOrder": "-1", "showFeatureCount": "0",
+            })
+            filegroup = ElementTree.SubElement(legendlayer, "filegroup",
+                                               {"open": "true", "hidden": "false"})
+            ElementTree.SubElement(filegroup, "legendlayerfile", {
+                "layerid": layer_id, "isInOverview": "0", "visible": "1",
+            })
+            basemap_ids = {layer.id for layer in self.layers
+                           if layer.provider.lower() in _BASEMAP_PROVIDERS}
+            legend.insert(self._basemap_index(
+                legend, "legendlayer",
+                lambda e: "wms" if any(f.get("layerid") in basemap_ids
+                                       for f in e.iter("legendlayerfile")) else "",
+            ), legendlayer)
+
+        return layer_id
+
+    @staticmethod
+    def _basemap_index(parent, tag: str, provider_of) -> int:
+        """Position d'insertion : devant le premier fond de plan, sinon en fin."""
+        children = list(parent)
+        for index, child in enumerate(children):
+            if child.tag == tag and provider_of(child).lower() in _BASEMAP_PROVIDERS:
+                return index
+        # Apres le dernier element du type, pour ne pas passer derriere
+        # <custom-order> ou <customproperties>.
+        positions = [i for i, child in enumerate(children) if child.tag == tag]
+        return positions[-1] + 1 if positions else len(children)
 
     # -- Enregistrement ----------------------------------------------------
 

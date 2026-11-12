@@ -27,6 +27,7 @@ modop/
 │   │   ├── files.py                 copie, purge, découverte des communes    173
 │   │   ├── qgis_project.py          lecture et écriture du .qgz              452
 │   │   ├── qgis_datasource.py       calcul d'emprise depuis les CSV          186
+│   │   ├── referentiels.py          extraits BAN et parcelles par commune    430
 │   │   ├── archive.py               constitution du ZIP livrable             147
 │   │   └── config_io.py             préférences de l'interface               153
 │   │
@@ -34,7 +35,7 @@ modop/
 │       ├── application.py           fenêtre Tkinter                          1088
 │       └── theme.py                 couleurs, polices, libellés               90
 │
-└── tests/                           287 tests
+└── tests/                           312 tests
     ├── conftest.py                  fixtures partagées                       249
     ├── test_excel.py                                                         319
     ├── test_qgis_project.py                                                  337
@@ -42,6 +43,7 @@ modop/
     ├── test_analyse.py              liens et PPT vierges                     194
     ├── test_lot.py                                                           228
     ├── test_archive.py                                                       155
+    ├── test_referentiels.py         sans réseau (téléchargement simulé)      347
     ├── test_qgis_datasource.py                                               129
     ├── test_files.py                                                         107
     ├── test_paths_config.py                                                  270
@@ -139,6 +141,9 @@ class QgisProject:
     open(path)                         # classmethod
     title, layers, canvas_extent       # propriétés
     find_layer(name)
+    has_layer(name)                    # nom exact, casse ignorée
+    add_vector_layer(name, datasource, provider, geometry, renderer,
+                     crs_authid="EPSG:2154")  # -> id, "" si déjà présente
     missing_sources()
     check()                            # -> list[str] d'anomalies
     layer_extent(layer)
@@ -156,6 +161,20 @@ class DataSource:  path, delimiter, x_field, y_field, wkt_field,
                    decimal_point, crs, has_geometry
 parse_datasource(source) -> DataSource | None
 compute_bounds(source, base_dir) -> tuple[float, float, float, float] | None
+```
+
+### `services/referentiels.py` — BAN et parcelles
+
+```python
+class ReferentielError(Exception)
+class LayerSpec:   name, datasource, geometry, color
+BAN_LAYER, PARCELLES_LAYER                      # LayerSpec des deux couches
+to_lambert93(lon, lat) -> tuple[float, float]
+ban_url(insee), parcelles_url(insee) -> str
+convert_ban(payload, insee, target) -> int      # nb d'adresses
+convert_parcelles(payload, target) -> int       # nb de parcelles
+fetch_referentiels(insee, verbose=True) -> ReferentielsResult
+renderer_element(spec) -> Element               # style par défaut
 ```
 
 ### `services/archive.py` — livrable
@@ -206,7 +225,9 @@ log_color(line) -> str
 
 ```
 services.workflow      -> constants, path_manager,
-                          services.{excel, analyse, files, qgis_project, archive}
+                          services.{excel, analyse, files, qgis_project,
+                                    referentiels, archive}
+services.referentiels  -> constants, path_manager
 services.analyse       -> constants, path_manager, services.{excel, ppt}
 services.ppt           -> constants
 services.archive       -> path_manager, services.files
@@ -237,7 +258,8 @@ Interface : saisie du lot et des codes INSEE
                  ├─ 1. excel.format_excel_file        audit trié → dossier commune
                  ├─ 2. files.purge_workspace          vide le répertoire de travail
                  ├─ 3. files.copy_commune_files       données → répertoire de travail
-                 ├─ 4. QgisProject.open + check       contrôle des couches
+                 ├─ 3b. referentiels.fetch_referentiels  BAN + parcelles (si coché)
+                 ├─ 4. QgisProject.open + check       ajout des couches, contrôle
                  ├─ 5. zoom_to_layer + save_as        carte centrée, nom de la commune
                  └─ 6. archive.build_deliverable      ZIP → dossier Carte
 ```
@@ -258,7 +280,8 @@ production du livrable cartographique.
 | `python -m modop.services.qgis_project` | inventaire des couches |
 | `python -m modop.services.qgis_project "carto SNA OK"` | avec couche imposée |
 | `python -m modop.services.archive` | constitution du ZIP seul |
-| `pytest -q` | les 287 tests |
+| `python -m modop.services.referentiels 73001` | extraits BAN et parcelles seuls |
+| `pytest -q` | les 312 tests |
 
 ## Où intervenir
 

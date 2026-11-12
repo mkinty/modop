@@ -9,7 +9,7 @@ constitution de l'archive à déposer.
 │  Lot : Lot7    Codes INSEE : 45001, 45002    [Détecter] │
 ├─ Traitement ────────────────────────────────────────────┤
 │  ████████████████████░░░░░░░░  Commune 2/2 — 45002      │
-│  ● Audit  ● Purge  ● Copie  ● QGIS  ● Archive           │
+│  ● Audit  ● Purge  ● Copie  ● BAN · Parcelles  ● QGIS   │
 ├─ Résultats ─────────────────────────────────────────────┤
 │  45001  ✅ OK   carto maillage principal  Livrable Ca…  │
 │  45002  ✅ OK   carto maillage principal  Livrable Ca…  │
@@ -48,8 +48,16 @@ uv run python main.py
 5. Cocher **Générer les PPT** si les liens et les PPT vierges doivent être
    produits (case vide par défaut : sans elle, l'audit n'est pas touché et
    le dossier `Analyse` reste vide).
-6. Cliquer **Lancer le traitement**.
-7. Suivre l'avancement, puis consulter **Journal** pour le détail.
+6. Laisser cochée **BAN et parcelles** (cochée par défaut) pour joindre au
+   livrable les adresses BAN et les parcelles cadastrales de chaque commune.
+   Requiert un accès internet.
+7. Cocher **Carte seule (QGIS)** pour ne régénérer que le projet QGIS et
+   l'archive du dossier `Carte`, sans retrier l'audit ni toucher aux PPT et
+   au dossier `Analyse` : utile pour mettre à jour un livrable déjà produit,
+   par exemple pour y ajouter les couches BAN et parcelles. Les cases
+   **Trier l'audit** et **Générer les PPT** sont alors grisées.
+8. Cliquer **Lancer le traitement**.
+9. Suivre l'avancement, puis consulter **Journal** pour le détail.
 
 En fin de traitement, un signal sonore retentit et une synthèse s'affiche :
 nombre de communes traitées, livrables produits, échecs et avertissements. La
@@ -97,11 +105,29 @@ Pour chaque commune, dans cet ordre :
 | **PPT** | Si la case **Générer les PPT** est cochée : complète la colonne `Lien vers le .ppt` de l'audit trié et génère les PPT vierges correspondants dans `Analyse`. Requiert un template PPT valide, sinon le traitement de la commune est interrompu. Décochée (défaut), cette étape n'a aucun effet |
 | **Purge** | Vide le répertoire de travail, en préservant le projet modèle |
 | **Copie** | Copie les fichiers QGIS de la commune vers le répertoire de travail |
-| **QGIS** | Ouvre le projet modèle, contrôle les couches, centre la carte sur la commune, enregistre au nom de la commune |
+| **BAN · Parcelles** | Si la case **BAN et parcelles** est cochée : télécharge les adresses BAN et les parcelles cadastrales **de la seule commune** (un fichier par code INSEE, ~100 Ko) et les écrit dans `carto BAN.csv` et `carto parcelles.csv`. Un service indisponible n'est qu'un avertissement : le livrable est produit sans la couche |
+| **QGIS** | Ouvre le projet modèle, y ajoute les couches `carto BAN` et `carto parcelles` s'il ne les contient pas, contrôle les couches, centre la carte sur la commune, enregistre au nom de la commune |
 | **Archive** | Compresse les `.csv` et le projet, dépose le ZIP dans le sous-dossier `Carte` |
 
 Le fichier Excel est livré à part, dans le dossier de la commune : il n'entre
 pas dans l'archive.
+
+### Couches BAN et parcelles
+
+| Couche | Source | Contenu |
+|---|---|---|
+| `carto BAN` | `plateforme.adresse.data.gouv.fr` (format BAL, par commune) | une ligne par position d'adresse, colonne `adresse` (« 12 bis Rue … ») en tête, x / y Lambert 93 |
+| `carto parcelles` | `cadastre.data.gouv.fr` (Etalab, par commune) | identifiant, section, numéro, contenance, géométrie WKT projetée en Lambert 93 |
+
+Ce sont des **extraits figés** à la date du traitement : le ZIP reste lisible
+hors ligne et montre l'état des référentiels au moment de l'audit.
+
+Si le projet modèle contient déjà une couche nommée `carto BAN` ou
+`carto parcelles`, elle est conservée avec son style. Sinon, elle est ajoutée
+avec un style simple (points magenta, contours orange sans remplissage), juste
+au-dessus des fonds de plan. Pour un style définitif (étiquettes des numéros,
+couleurs), il suffit de styler une fois ces couches dans le modèle et de
+l'enregistrer : le programme ne les touchera plus.
 
 ## PPT vierges du dossier Analyse
 
