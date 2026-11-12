@@ -109,21 +109,131 @@ def to_lambert93(lon: float, lat: float) -> tuple[float, float]:
 # -- Telechargement ------------------------------------------------------------
 
 
-def _download(url: str, timeout: float = REFERENTIELS_TIMEOUT) -> bytes:
-    """Telecharge une ressource. Le proxy systeme est pris en compte.
+class _NetworkError(ReferentielError):
+    """Serveur injoignable par cette methode (reseau, proxy, TLS, delai).
 
-    Raises:
-        ReferentielError: erreur HTTP, reseau ou delai depasse.
+    A distinguer d'une reponse HTTP du serveur (404...) : celle-ci prouve que
+    le reseau fonctionne, une autre methode n'y changerait rien.
     """
+
+
+#: Delai de la tentative directe. Court : sur un poste d'entreprise, elle
+#: echoue par expiration, et chaque seconde est perdue avant le repli.
+_DIRECT_TIMEOUT = 15
+
+#: Methode ayant reussi en dernier, essayee en premier ensuite : le delai
+#: d'echec de l'autre n'est paye qu'une fois par session, pas par fichier.
+_preferred_method: str | None = None
+
+
+def _download_urllib(url: str, timeout: float) -> bytes:
+    """Telechargement Python. Lit le proxy des variables d'environnement et
+    du registre, mais ni les scripts PAC ni l'authentification Windows."""
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read()
     except urllib.error.HTTPError as error:
+        if error.code == 407:
+            # Reponse du proxy, pas du serveur : il exige l'authentification
+            # Windows, que seule la pile du systeme sait fournir.
+            raise _NetworkError("connexion directe : proxy, authentification requise") from error
         raise ReferentielError(f"HTTP {error.code} sur {url}") from error
     except (urllib.error.URLError, OSError) as error:
         reason = getattr(error, "reason", error)
-        raise ReferentielError(f"telechargement impossible ({reason}) : {url}") from error
+        raise _NetworkError(f"connexion directe : {reason}") from error
+
+
+#: Script PowerShell : .NET applique la configuration reseau de Windows,
+#: celle du navigateur (proxy, script PAC, detection automatique), avec
+#: l'authentification de la session et les certificats du magasin Windows.
+#: URL et fichier passent par l'environnement : aucun echappement a gerer.
+_POWERSHELL_SCRIPT = (
+    "$ErrorActionPreference = 'Stop';"
+    "[Net.ServicePointManager]::SecurityProtocol = "
+    "[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12;"
+    "$client = New-Object Net.WebClient;"
+    "$client.Headers.Add('User-Agent', $env:MODOP_USER_AGENT);"
+    "$proxy = [Net.WebRequest]::GetSystemWebProxy();"
+    "$proxy.Credentials = [Net.CredentialCache]::DefaultNetworkCredentials;"
+    "$client.Proxy = $proxy;"
+    "$client.UseDefaultCredentials = $true;"
+    "try { $client.DownloadFile($env:MODOP_URL, $env:MODOP_OUT) }"
+    "catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException };"
+    " [Console]::Error.WriteLine($e.Message); exit 1 }"
+)
+
+
+def _download_windows(url: str, timeout: float) -> bytes:
+    """Telechargement par la pile reseau de Windows (via PowerShell).
+
+    Repli pour les postes d'entreprise ou le navigateur passe par un proxy
+    que Python ne sait pas utiliser.
+    """
+    import subprocess
+    import tempfile
+
+    handle, target = tempfile.mkstemp(prefix="modop_", suffix=".tmp")
+    os.close(handle)
+    env = dict(os.environ, MODOP_URL=url, MODOP_OUT=target, MODOP_USER_AGENT=_USER_AGENT)
+    try:
+        try:
+            completed = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive",
+                 "-ExecutionPolicy", "Bypass", "-Command", _POWERSHELL_SCRIPT],
+                env=env, capture_output=True, timeout=timeout,
+                # Pas de fenetre console qui clignote depuis l'interface.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise _NetworkError(f"via Windows : {error}") from error
+
+        if completed.returncode != 0:
+            message = completed.stderr.decode("utf-8", errors="replace").strip()
+            if not message or "�" in message:
+                message = completed.stderr.decode("cp850", errors="replace").strip()
+            message = message.splitlines()[-1] if message else f"code {completed.returncode}"
+            raise _NetworkError(f"via Windows : {message}")
+
+        with open(target, "rb") as stream:
+            return stream.read()
+    finally:
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+
+
+def _download(url: str, timeout: float = REFERENTIELS_TIMEOUT) -> bytes:
+    """Telecharge une ressource.
+
+    Essaie d'abord le telechargement Python, puis, sous Windows, la pile
+    reseau du systeme, qui suit la configuration du navigateur (proxy
+    d'entreprise, script PAC, authentification). La methode qui reussit est
+    retenue pour les fichiers suivants.
+
+    Raises:
+        ReferentielError: reponse HTTP d'erreur, ou toutes les methodes en
+            echec (le message les detaille).
+    """
+    global _preferred_method
+
+    methods = {"direct": lambda: _download_urllib(url, _DIRECT_TIMEOUT)}
+    if os.name == "nt":
+        methods["windows"] = lambda: _download_windows(url, timeout)
+
+    order = sorted(methods, key=lambda name: name != _preferred_method)
+    failures = []
+    for name in order:
+        try:
+            payload = methods[name]()
+        except _NetworkError as error:
+            failures.append(str(error))
+            continue
+        _preferred_method = name
+        return payload
+
+    raise ReferentielError(f"telechargement impossible ({' ; '.join(failures)}) : {url}")
 
 
 def ban_url(insee: str) -> str:

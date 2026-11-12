@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import io
 import json
 import os
 import zipfile
@@ -235,15 +236,93 @@ def test_fetch_referentiels_independants(bureau, fake_download):
     assert "carto BAN" in bilan.warnings[0]
 
 
-def test_download_signale_une_erreur_reseau(monkeypatch):
+@pytest.fixture
+def methodes(monkeypatch):
+    """Remplace les deux methodes de telechargement par des doublures.
+
+    `comportements["direct"]` / `["windows"]` : contenu renvoye, ou exception
+    levee. `appels` trace l'ordre des tentatives.
+    """
     import urllib.error
 
-    def _urlopen(*_args, **_kwargs):
-        raise urllib.error.URLError("hors ligne")
+    comportements: dict = {}
+    appels: list[str] = []
+
+    def _urlopen(request, timeout=None):
+        appels.append("direct")
+        resultat = comportements["direct"]
+        if isinstance(resultat, Exception):
+            raise resultat
+
+        class _Reponse(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return False
+
+        return _Reponse(resultat)
+
+    def _windows(url, timeout):
+        appels.append("windows")
+        resultat = comportements["windows"]
+        if isinstance(resultat, Exception):
+            raise resultat
+        return resultat
 
     monkeypatch.setattr(referentiels.urllib.request, "urlopen", _urlopen)
-    with pytest.raises(ReferentielError, match="hors ligne"):
-        referentiels._download("https://exemple.invalid/x")
+    monkeypatch.setattr(referentiels, "_download_windows", _windows)
+    monkeypatch.setattr(referentiels.os, "name", "nt")
+    monkeypatch.setattr(referentiels, "_preferred_method", None)
+    comportements["urllib_error"] = urllib.error
+    return comportements, appels
+
+
+def test_download_direct(methodes):
+    comportements, appels = methodes
+    comportements["direct"] = b"ok"
+    assert referentiels._download("https://x/a") == b"ok"
+    assert appels == ["direct"]
+
+
+def test_download_repli_windows_si_proxy(methodes):
+    """Poste d'entreprise : la connexion directe expire, Windows passe."""
+    comportements, appels = methodes
+    comportements["direct"] = comportements["urllib_error"].URLError("[WinError 10060]")
+    comportements["windows"] = b"via windows"
+
+    assert referentiels._download("https://x/a") == b"via windows"
+    # La methode qui a marche est essayee en premier ensuite : le delai
+    # d'expiration n'est paye qu'une fois.
+    assert referentiels._download("https://x/b") == b"via windows"
+    assert appels == ["direct", "windows", "windows"]
+
+
+def test_download_repli_sur_407(methodes):
+    comportements, appels = methodes
+    comportements["direct"] = comportements["urllib_error"].HTTPError(
+        "https://x/a", 407, "Proxy Authentication Required", {}, None)
+    comportements["windows"] = b"ok"
+    assert referentiels._download("https://x/a") == b"ok"
+    assert appels == ["direct", "windows"]
+
+
+def test_download_pas_de_repli_sur_404(methodes):
+    """Le serveur a repondu : le reseau fonctionne, inutile d'insister."""
+    comportements, appels = methodes
+    comportements["direct"] = comportements["urllib_error"].HTTPError(
+        "https://x/a", 404, "Not Found", {}, None)
+    with pytest.raises(ReferentielError, match="HTTP 404"):
+        referentiels._download("https://x/a")
+    assert appels == ["direct"]
+
+
+def test_download_echec_total_detaille(methodes):
+    comportements, _appels = methodes
+    comportements["direct"] = comportements["urllib_error"].URLError("hors ligne")
+    comportements["windows"] = referentiels._NetworkError("via Windows : proxy refuse")
+    with pytest.raises(ReferentielError, match="hors ligne.*proxy refuse"):
+        referentiels._download("https://x/a")
 
 
 # -- Ajout au projet QGIS ---------------------------------------------------------

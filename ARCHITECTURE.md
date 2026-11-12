@@ -145,6 +145,17 @@ chaque adresse (écart < 0,5 m, dû à l'arrondi des degrés). Sur le lot
 d'exemple, 96 % des positions « bâtiment » tombent dans la parcelle que leur
 attribue la BAN.
 
+**Téléchargement derrière un proxy d'entreprise.** `urllib` lit le proxy des
+variables d'environnement et du registre, mais ni les scripts PAC ni
+l'authentification Windows (NTLM/Kerberos) : sur un poste d'entreprise, la
+connexion directe expire (`WinError 10060`) alors que le navigateur passe.
+`_download()` se replie alors sur `_download_windows()`, un `Net.WebClient`
+lancé par PowerShell avec `GetSystemWebProxy()` et les identifiants de la
+session : c'est la pile réseau du navigateur. Une réponse HTTP du serveur
+(404…) ne déclenche pas le repli, puisqu'elle prouve que le réseau fonctionne ;
+un 407 (le proxy exige l'authentification), si. La méthode gagnante est
+mémorisée pour les fichiers suivants.
+
 Un service indisponible ne fait pas échouer la commune : `ReferentielError`
 est convertie en avertissement, et seules les couches effectivement produites
 sont déclarées au projet (une couche sans fichier serait signalée « source

@@ -122,6 +122,13 @@ pas dans l'archive.
 Ce sont des **extraits figés** à la date du traitement : le ZIP reste lisible
 hors ligne et montre l'état des référentiels au moment de l'audit.
 
+**Poste d'entreprise / proxy.** Si la connexion directe échoue (par exemple
+`WinError 10060`), le téléchargement est refait par Windows, avec la même
+configuration réseau que le navigateur : proxy, script PAC, authentification
+de session. La méthode qui fonctionne est retenue pour le reste du lot : le
+délai d'échec (15 s) n'est payé qu'une fois. Si un lien s'ouvre dans le
+navigateur, l'outil doit donc pouvoir le télécharger.
+
 Si le projet modèle contient déjà une couche nommée `carto BAN` ou
 `carto parcelles`, elle est conservée avec son style. Sinon, elle est ajoutée
 avec un style simple (points magenta, contours orange sans remplissage), juste
